@@ -2,29 +2,52 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>のんびり釣り日和 — ブラウザで遊べる釣りゲーム</title>
-<meta name="description" content="魚を釣って売り、竿とルアーを買いそろえる釣りゲーム。池から深海まで、伝説の魚を狙おう。">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>のんびり釣り日和 — スマホで遊べる釣りゲーム</title>
+<meta name="description" content="魚を釣って売り、竿とルアーを買いそろえる釣りゲーム。ホーム画面に追加すればアプリとして遊べます。">
+
 <link rel="stylesheet" href="src/style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#06283d">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎣</text></svg>">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<!-- iOS でホーム画面から起動したときにフルスクリーンにする -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="釣り日和">
 </head>
 <body>
 
 <header class="topbar">
   <h1>のんびり釣り日和</h1>
+
   <div class="wallet" id="wallet" aria-label="所持金">
     <span class="wallet-icon">💰</span><span class="wallet-value" id="money">0</span><span class="wallet-unit">円</span>
   </div>
+
   <div class="badges">
     <span class="badge" id="badge-spot">池</span>
     <span class="badge" id="badge-time">朝</span>
-    <span class="badge" id="badge-rod">のべ竿</span>
-    <span class="badge" id="badge-lure">ミミズ</span>
+    <span class="badge badge-gear" id="badge-rod">のべ竿</span>
+    <span class="badge badge-gear" id="badge-lure">ミミズ</span>
   </div>
+
   <div class="topbar-actions">
-    <a class="topbar-link" href="../">🃏 大富豪</a>
-    <button type="button" class="ghost" id="btn-shop" aria-haspopup="dialog">🛒 ショップ</button>
-    <button type="button" class="ghost" id="btn-book" aria-haspopup="dialog">📖 図鑑</button>
+    <button type="button" class="ghost icon-btn hidden" id="btn-install" title="アプリとして追加">
+      <span aria-hidden="true">⬇️</span><span class="btn-label">追加</span>
+    </button>
+    <button type="button" class="ghost icon-btn" id="btn-shop" aria-haspopup="dialog">
+      <span aria-hidden="true">🛒</span><span class="btn-label">ショップ</span>
+    </button>
+    <button type="button" class="ghost icon-btn" id="btn-book" aria-haspopup="dialog">
+      <span aria-hidden="true">📖</span><span class="btn-label">図鑑</span>
+    </button>
+    <button type="button" class="ghost icon-btn only-narrow" id="btn-log" aria-expanded="false" aria-controls="sidebar">
+      <span aria-hidden="true">📋</span><span class="btn-label">日誌</span>
+    </button>
+    <a class="topbar-link only-wide" href="../">🃏 大富豪</a>
   </div>
 </header>
 
@@ -54,11 +77,17 @@
 
   <div class="controls">
     <button type="button" class="primary big" id="btn-action">キャスト</button>
-    <p class="key-help">スペース：キャスト／合わせ／長押しで巻く・売る　　S：ショップ　　Z：図鑑</p>
+    <p class="key-help">
+      <span class="only-wide">スペース：キャスト／合わせ／長押しで巻く・売る　　S：ショップ　　Z：図鑑</span>
+      <span class="only-narrow">画面をタップ／長押しでも操作できます</span>
+    </p>
   </div>
 </main>
 
-<aside class="sidebar">
+<div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sheet-grip" aria-hidden="true"></div>
   <section class="panel">
     <h2>今日の釣果</h2>
     <dl class="stats">
@@ -72,6 +101,7 @@
     <h2>釣り日誌</h2>
     <ol class="log" id="log" aria-live="polite"></ol>
   </section>
+  <a class="topbar-link only-narrow sheet-link" href="../">🃏 大富豪であそぶ</a>
 </aside>
 
 <!-- ショップ -->
@@ -97,6 +127,18 @@
     <span class="dlg-money" id="book-progress"></span>
   </header>
   <div class="book" id="book"></div>
+  <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<!-- iPhone / iPad 向けのインストール手順 -->
+<dialog id="dlg-ios">
+  <header class="dlg-head"><h2>📲 アプリとして追加する</h2></header>
+  <ol class="ios-steps">
+    <li>画面下（iPad は上）の <strong>共有ボタン</strong> <span class="ios-icon">⬆️</span> を押す</li>
+    <li>メニューを下にたどって <strong>「ホーム画面に追加」</strong> を選ぶ</li>
+    <li><strong>「追加」</strong> を押すと、アプリのアイコンが並びます</li>
+  </ol>
+  <p class="ios-note">追加したアイコンから開くと、画面いっぱいのアプリとして遊べます。<br>オフラインでも遊べて、釣果もそのまま残ります。</p>
   <form method="dialog"><button class="ghost">閉じる</button></form>
 </dialog>
 
