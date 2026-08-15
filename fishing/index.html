@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>のんびり釣り日和 — ブラウザで遊べる釣りゲーム</title>
+<meta name="description" content="魚を釣って売り、竿とルアーを買いそろえる釣りゲーム。池から深海まで、伝説の魚を狙おう。">
+<link rel="stylesheet" href="src/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎣</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>のんびり釣り日和</h1>
+  <div class="wallet" id="wallet" aria-label="所持金">
+    <span class="wallet-icon">💰</span><span class="wallet-value" id="money">0</span><span class="wallet-unit">円</span>
+  </div>
+  <div class="badges">
+    <span class="badge" id="badge-spot">池</span>
+    <span class="badge" id="badge-time">朝</span>
+    <span class="badge" id="badge-rod">のべ竿</span>
+    <span class="badge" id="badge-lure">ミミズ</span>
+  </div>
+  <div class="topbar-actions">
+    <a class="topbar-link" href="../">🃏 大富豪</a>
+    <button type="button" class="ghost" id="btn-shop" aria-haspopup="dialog">🛒 ショップ</button>
+    <button type="button" class="ghost" id="btn-book" aria-haspopup="dialog">📖 図鑑</button>
+  </div>
+</header>
+
+<main class="stage-wrap">
+  <div class="stage" id="stage">
+    <canvas id="scene" aria-label="釣り場"></canvas>
+
+    <p class="hud-status" id="status" role="status">竿を振って釣りを始めよう</p>
+
+    <!-- 釣果カード -->
+    <div class="result-card" id="result-card" aria-live="polite" hidden>
+      <div class="result-rarity" id="result-rarity">ふつう</div>
+      <div class="result-emoji" id="result-emoji">🐟</div>
+      <h2 class="result-name" id="result-name">フナ</h2>
+      <p class="result-size" id="result-size">20cm / 0.30kg</p>
+      <p class="result-title" id="result-title" hidden>大物！</p>
+      <p class="result-new" id="result-new" hidden>✨ 自己ベスト更新！</p>
+      <p class="result-price"><span id="result-price">0</span>円で売れそうだ</p>
+      <div class="result-actions">
+        <button type="button" class="primary" id="btn-sell">売る</button>
+        <button type="button" class="ghost" id="btn-release">逃がす</button>
+      </div>
+    </div>
+
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <div class="controls">
+    <button type="button" class="primary big" id="btn-action">キャスト</button>
+    <p class="key-help">スペース：キャスト／合わせ／長押しで巻く・売る　　S：ショップ　　Z：図鑑</p>
+  </div>
+</main>
+
+<aside class="sidebar">
+  <section class="panel">
+    <h2>今日の釣果</h2>
+    <dl class="stats">
+      <div><dt>キャスト</dt><dd id="stat-casts">0</dd></div>
+      <div><dt>釣った数</dt><dd id="stat-catches">0</dd></div>
+      <div><dt>売上</dt><dd id="stat-earned">0円</dd></div>
+      <div><dt>図鑑</dt><dd id="stat-book">0 / 0</dd></div>
+    </dl>
+  </section>
+  <section class="panel grow">
+    <h2>釣り日誌</h2>
+    <ol class="log" id="log" aria-live="polite"></ol>
+  </section>
+</aside>
+
+<!-- ショップ -->
+<dialog id="dlg-shop">
+  <header class="dlg-head">
+    <h2>🛒 ショップ</h2>
+    <span class="dlg-money">所持金 <strong id="shop-money">0円</strong></span>
+  </header>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" class="tab active" data-kind="rod">釣り竿</button>
+    <button type="button" role="tab" class="tab" data-kind="lure">ルアー・エサ</button>
+    <button type="button" role="tab" class="tab" data-kind="spot">釣り場</button>
+  </div>
+  <div class="shop-list" id="shop-list"></div>
+  <p class="shop-msg" id="shop-msg" role="status"></p>
+  <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<!-- 図鑑 -->
+<dialog id="dlg-book">
+  <header class="dlg-head">
+    <h2>📖 さかな図鑑</h2>
+    <span class="dlg-money" id="book-progress"></span>
+  </header>
+  <div class="book" id="book"></div>
+  <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<script type="module" src="src/ui.js"></script>
+</body>
+</html>
