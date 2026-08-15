@@ -160,6 +160,7 @@ function startBite() {
   });
   setMode(MODE.bite);
   scene.bite();
+  buzz(35);
   setAction('合わせる！', { hot: true });
   setStatus('きた！ 合わせろ！', 'alert');
   timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), HOOK_WINDOW * 1000);
@@ -184,6 +185,7 @@ function hook() {
   });
   setMode(MODE.fight);
   scene.hook(fight);
+  buzz(20);
   setAction('巻く（長押し）', { hot: true });
   const heavy = pending.fish.power > rod.power;
   setStatus(heavy ? '重い！ かなりの大物だ' : '掛かった！ 巻き上げろ！', heavy ? 'alert' : '');
@@ -199,6 +201,7 @@ function finishFight(phase) {
 
   if (phase === FIGHT.caught) {
     scene.land(result);
+    buzz([25, 45, 90]);
     const isNew = recordCatch(player, result);
     result.isNew = isNew;
     save();
@@ -212,6 +215,7 @@ function finishFight(phase) {
     ? `ラインが切れた… ${result.fish.name}には竿が負けている`
     : `${result.fish.name}に逃げられた…`;
   scene.fail(phase === FIGHT.snapped ? 'snapped' : 'escaped');
+  buzz(phase === FIGHT.snapped ? [70, 50, 70] : 40);
   setStatus(text, 'bad');
   setHint(phase === FIGHT.snapped ? 'もっと強い竿を買おう' : '');
   log(text, 'bad');
@@ -276,6 +280,7 @@ function sellResult() {
   const result = card.pendingResult;
   if (!result) return;
   scene.coins(14);
+  buzz(15);
   sell(player, result);
   save();
   renderMoney();
@@ -491,6 +496,94 @@ function frame(now) {
   }
 }
 
+// ---------------------------------------------------------------- アプリとして使う
+
+/** 手にも伝える。対応していない端末では黙って無視される。 */
+function buzz(pattern) {
+  try { navigator.vibrate?.(pattern); } catch { /* 触覚がなくても遊べる */ }
+}
+
+/** ホーム画面から起動しているか。 */
+const isStandalone = () =>
+  window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+
+const isIOS = () =>
+  /iphone|ipad|ipod/i.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);   // iPadOS
+
+/** オフラインでも遊べるようにキャッシュを仕込む。 */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (!['https:', 'http:'].includes(location.protocol)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => { /* 入れられなくても遊べる */ });
+  });
+}
+
+/**
+ * 「アプリとして追加」ボタン。
+ * Android / デスクトップ Chrome は beforeinstallprompt が来たときだけ出し、
+ * iOS は仕組みがないので手順を書いたダイアログを出す。
+ */
+function setupInstall() {
+  const btn = $('btn-install');
+  let deferred = null;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    if (!isStandalone()) btn.classList.remove('hidden');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferred = null;
+    btn.classList.add('hidden');
+    log('アプリとして追加した。ホーム画面から遊べます。');
+  });
+
+  if (isIOS() && !isStandalone()) btn.classList.remove('hidden');
+
+  btn.addEventListener('click', async () => {
+    if (deferred) {
+      deferred.prompt();
+      const { outcome } = await deferred.userChoice;
+      if (outcome === 'accepted') btn.classList.add('hidden');
+      deferred = null;
+      return;
+    }
+    $('dlg-ios').showModal();
+  });
+}
+
+/** 狭い画面で日誌を下から引き出す。 */
+function setupLogSheet() {
+  const sheet = $('sidebar');
+  const backdrop = $('sheet-backdrop');
+  const btn = $('btn-log');
+
+  const setOpen = (open) => {
+    sheet.classList.toggle('open', open);
+    backdrop.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+  };
+
+  btn.addEventListener('click', () => setOpen(!sheet.classList.contains('open')));
+  backdrop.addEventListener('click', () => setOpen(false));
+  // つまみを下に払っても閉じられる
+  sheet.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.sheet-grip')) return;
+    const startY = e.clientY;
+    const end = (up) => {
+      window.removeEventListener('pointerup', end);
+      if (up.clientY - startY > 30) setOpen(false);
+    };
+    window.addEventListener('pointerup', end);
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setOpen(false);
+  });
+}
+
 // ---------------------------------------------------------------- 起動
 
 function init() {
@@ -518,6 +611,7 @@ function init() {
     press();
   });
   window.addEventListener('pointerup', release);
+  window.addEventListener('pointercancel', release);
 
   window.addEventListener('keydown', (e) => {
     if (e.target.closest('dialog')) return;
@@ -540,6 +634,12 @@ function init() {
   $('btn-book').addEventListener('click', openBook);
   $('btn-sell').addEventListener('click', sellResult);
   $('btn-release').addEventListener('click', releaseResult);
+
+  registerServiceWorker();
+  setupInstall();
+  setupLogSheet();
+  // 画面の向きが変わったら canvas を作り直す
+  window.addEventListener('orientationchange', () => setTimeout(() => scene.resize(), 250));
   for (const tab of document.querySelectorAll('.tab')) {
     tab.addEventListener('click', () => { shopKind = tab.dataset.kind; renderShop(); });
   }

@@ -283,7 +283,8 @@ export class Scene {
 
   rodTip() {
     const a = this.anglerPos();
-    const len = Math.min(this.w * 0.26, 190);
+    // 横向きの端末など画面が低いときは、竿先が画面の外に出ないように短くする
+    const len = Math.min(this.w * 0.26, 190, this.h * 0.42);
     return {
       x: a.x + Math.cos(this.rodAngle) * len,
       y: a.y - 58 + Math.sin(this.rodAngle) * len,
@@ -963,26 +964,39 @@ export class Scene {
     }
   }
 
-  /** ファイト中の寄せゲージ（画面の右端）。 */
+  /**
+   * ファイト中のゲージ（画面の右側）。
+   * 左＝寄せ具合、まん中＝寄せバーと魚、右＝ラインの負荷。
+   * 縦長の画面でも間延びしないように高さに上限をつけている。
+   */
   #drawFightGauge() {
     const f = this.fight;
     if (this.mode !== 'fight' || !f) return;
     const { ctx, w, h } = this;
-    const gw = 26;
-    const gx = w - gw - 22;
-    const gy = h * 0.14;
-    const gh = h * 0.72;
 
-    // 枠
-    ctx.fillStyle = 'rgba(3,14,22,0.78)';
-    ctx.beginPath();
-    ctx.roundRect(gx - 6, gy - 8, gw + 12, gh + 16, 14);
-    ctx.fill();
+    const gh = Math.min(h * 0.72, 440);
+    const gy = Math.round((h - gh) / 2) + 8;
+    const gw = clamp(Math.round(w * 0.07), 24, 36);
+    const thin = 9;                       // 左右の細いバーの幅
+    const gap = 7;
+    const strainX = w - 18 - thin;
+    const gx = strainX - gap - gw;
+    const progressX = gx - gap - thin;
+    const label = h > 420;
+
+    const track = (x, width, radius) => {
+      ctx.fillStyle = 'rgba(3,14,22,0.78)';
+      ctx.beginPath();
+      ctx.roundRect(x, gy - 8, width, gh + 16, radius);
+      ctx.fill();
+    };
+
+    // --- まん中：寄せバーの通り道
+    track(gx - 6, gw + 12, 14);
     ctx.strokeStyle = 'rgba(255,255,255,0.28)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // 寄せバー
     const barTop = gy + f.barTop * gh;
     const barH = f.barH * gh;
     const grad = ctx.createLinearGradient(0, barTop, 0, barTop + barH);
@@ -1005,46 +1019,48 @@ export class Scene {
     ctx.translate(gx + gw / 2, fy);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    ctx.arc(0, 0, 12, 0, TAU);
+    ctx.arc(0, 0, gw * 0.46, 0, TAU);
     ctx.fill();
-    ctx.font = '18px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",serif';
+    ctx.font = `${Math.round(gw * 0.68)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(f.fish?.emoji || '🐟', 0, 0);
     ctx.restore();
 
-    // 進捗（左側の細いバー）
-    const px = gx - 16;
-    ctx.fillStyle = 'rgba(3,14,22,0.78)';
-    ctx.beginPath();
-    ctx.roundRect(px - 3, gy - 8, 10, gh + 16, 6);
-    ctx.fill();
-    const ph = f.progress * gh;
+    // --- 左：寄せ具合。下から伸びて満タンで釣り上げ
+    track(progressX - 3, thin + 6, 7);
+    const ph = Math.max(2, f.progress * gh);
     ctx.fillStyle = '#ffd43b';
     ctx.beginPath();
-    ctx.roundRect(px, gy + gh - ph + 4, 4, Math.max(2, ph - 8), 3);
+    ctx.roundRect(progressX, gy + gh - ph, thin, ph, 4);
     ctx.fill();
 
-    // ライン負荷（上に表示。赤くなったら切れる寸前）
-    if (f.strain > 0.02) {
-      const sw = 120;
-      const sx = w - sw - 22;
-      const sy = 16;
-      ctx.fillStyle = 'rgba(3,14,22,0.78)';
-      ctx.beginPath();
-      ctx.roundRect(sx, sy, sw, 10, 5);
-      ctx.fill();
+    // --- 右：ラインの負荷。満タンで切れる
+    track(strainX - 3, thin + 6, 7);
+    if (f.strain > 0.01) {
+      const sh = Math.max(2, f.strain * gh);
       const danger = f.strain > 0.65;
       ctx.fillStyle = danger
         ? `rgba(255,${Math.round(90 - f.strain * 60)},80,${0.75 + Math.sin(this.t * 22) * 0.25})`
         : '#ffa94d';
       ctx.beginPath();
-      ctx.roundRect(sx, sy, Math.max(4, sw * f.strain), 10, 5);
+      ctx.roundRect(strainX, gy + gh - sh, thin, sh, 4);
       ctx.fill();
-      ctx.font = '11px system-ui';
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.textAlign = 'right';
-      ctx.fillText('ライン負荷', sx - 8, sy + 9);
+    }
+
+    if (label) {
+      ctx.font = '10px "Hiragino Sans","Noto Sans JP",system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      // 明るい空の上でも読めるように縁取りする
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(3,14,22,0.85)';
+      ctx.strokeText('寄せ', progressX + thin / 2, gy - 14);
+      ctx.strokeText('負荷', strainX + thin / 2, gy - 14);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText('寄せ', progressX + thin / 2, gy - 14);
+      ctx.fillStyle = f.strain > 0.65 ? '#ff8787' : 'rgba(255,255,255,0.9)';
+      ctx.fillText('負荷', strainX + thin / 2, gy - 14);
     }
   }
 }

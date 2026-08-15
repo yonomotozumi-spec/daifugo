@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="のんびり釣り日和">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a7fa8"/>
+      <stop offset="0.42" stop-color="#0d4a68"/>
+      <stop offset="1" stop-color="#04202f"/>
+    </linearGradient>
+    <linearGradient id="fish" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd76b"/>
+      <stop offset="1" stop-color="#f08a2e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.34" r="0.62">
+      <stop offset="0" stop-color="#8fe0ff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#8fe0ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#sea)"/>
+  <rect width="512" height="512" fill="url(#glow)"/>
+
+  <!-- 水面のゆらぎ -->
+  <g stroke="#dff6ff" fill="none" stroke-linecap="round">
+    <path d="M36 150 q34 -20 68 0 t68 0 t68 0 t68 0 t68 0 t68 0" stroke-width="10" opacity="0.5"/>
+    <path d="M16 196 q34 -18 68 0 t68 0 t68 0 t68 0 t68 0 t68 0" stroke-width="7" opacity="0.28"/>
+  </g>
+
+  <!-- 釣り糸と針 -->
+  <g stroke="#eaf6fb" fill="none" stroke-linecap="round">
+    <path d="M366 40 L366 214" stroke-width="7" opacity="0.85"/>
+    <path d="M366 214 q0 34 -26 34 q-24 0 -24 -24" stroke-width="9" opacity="0.9"/>
+  </g>
+
+  <!-- 魚 -->
+  <g transform="translate(238 336) rotate(-12)">
+    <path d="M-96 0 q46 -74 118 -74 q74 0 110 74 q-36 74 -110 74 q-72 0 -118 -74 Z" fill="url(#fish)"/>
+    <path d="M-96 0 l-70 -56 l16 56 l-16 56 Z" fill="url(#fish)"/>
+    <path d="M28 -60 q30 22 34 60 q-4 38 -34 60 q22 -60 0 -120 Z" fill="#ffffff" opacity="0.22"/>
+    <circle cx="104" cy="-14" r="15" fill="#06283d"/>
+    <circle cx="109" cy="-19" r="5" fill="#ffffff" opacity="0.9"/>
+  </g>
+
+  <!-- あぶく -->
+  <g fill="#dff6ff" opacity="0.5">
+    <circle cx="96" cy="418" r="13"/>
+    <circle cx="140" cy="452" r="8"/>
+    <circle cx="430" cy="404" r="10"/>
+  </g>
+</svg>

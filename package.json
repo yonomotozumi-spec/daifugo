@@ -8,14 +8,16 @@
     "test": "node --test test/*.test.js fishing/test/*.test.js",
     "start": "npx --yes http-server . -p 8080 -c-1",
     "test:browser": "node test/browser.smoke.mjs",
-    "test:browser:fishing": "node fishing/test/browser.smoke.mjs"
+    "test:browser:fishing": "node fishing/test/browser.smoke.mjs",
+    "test:mobile": "node fishing/test/mobile.smoke.mjs"
   },
   "keywords": [
     "daifugo",
     "card-game",
     "javascript",
     "game",
-    "fishing"
+    "fishing",
+    "pwa"
   ],
   "license": "MIT"
 }
