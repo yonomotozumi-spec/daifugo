@@ -1,0 +1,398 @@
+/* ひかりのつるぎ — ドラクエ風の黒ウィンドウでまとめた画面。 */
+
+:root {
+  --bg: #05060c;
+  --win: #08090f;
+  --win-border: #f4f5f7;
+  --text: #f4f5f7;
+  --accent: #ffd43b;
+  --danger: #ff6b6b;
+  --pad-h: 132px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+  font-weight: 700;
+  overscroll-behavior: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------------------------------------------------------------- 上のバー */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  background: #0b0d16;
+  border-bottom: 2px solid #1d2233;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+}
+
+.topbar-links { display: flex; gap: 10px; }
+
+.topbar-links a {
+  color: #aab4cf;
+  font-size: 12px;
+  text-decoration: none;
+  border: 2px solid #26304a;
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.topbar-links a:hover { color: var(--text); border-color: #4a5a86; }
+
+/* ---------------------------------------------------------------- 画面 */
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#scene {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+/* 共通のウィンドウ */
+.window {
+  position: absolute;
+  background: var(--win);
+  border: 3px solid var(--win-border);
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px #05060c, 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 8px 12px;
+  line-height: 1.55;
+}
+
+.window[hidden] { display: none; }
+
+/* ようす（左上） */
+.hud {
+  top: 10px;
+  left: 10px;
+  min-width: 108px;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.hud-name {
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.hud dl { margin: 0; display: grid; gap: 1px; }
+.hud dl div { display: flex; justify-content: space-between; gap: 10px; }
+.hud dt { margin: 0; color: #9fb0d0; font-size: 11px; }
+.hud dd { margin: 0; font-variant-numeric: tabular-nums; }
+.hud dd.low { color: var(--danger); }
+
+/* 場所の名前 */
+.place {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(5, 6, 12, 0.85);
+  border: 2px solid var(--win-border);
+  border-radius: 4px;
+  padding: 4px 14px;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  animation: place-in 2.6s ease forwards;
+}
+
+@keyframes place-in {
+  0% { opacity: 0; transform: translate(-50%, -8px); }
+  15%, 70% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -6px); }
+}
+
+/* 敵のようす */
+.enemy {
+  top: 10px;
+  right: 10px;
+  min-width: 150px;
+  font-size: 13px;
+  padding: 6px 10px;
+  text-align: center;
+}
+
+.enemy-name { display: block; margin-bottom: 4px; }
+
+.gauge {
+  display: block;
+  height: 6px;
+  background: #2b2f3d;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gauge i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ff8787, #ffd43b);
+  transition: width 0.25s ease;
+}
+
+/* メッセージ */
+.message {
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  min-height: 92px;
+  font-size: 15px;
+}
+
+.message p { margin: 0; white-space: pre-wrap; }
+
+.message .cursor {
+  position: absolute;
+  right: 12px;
+  bottom: 6px;
+  color: var(--accent);
+  animation: blink 0.9s steps(1) infinite;
+}
+
+.message .cursor[hidden] { display: none; }
+
+@keyframes blink { 50% { opacity: 0; } }
+
+/* コマンド／メニュー */
+.menu {
+  left: 10px;
+  bottom: 114px;
+  min-width: 168px;
+  font-size: 15px;
+  padding: 8px 10px;
+  max-height: 62%;
+  overflow-y: auto;
+}
+
+.menu.wide { min-width: 260px; }
+
+.menu h2 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+}
+
+.menu h2[hidden] { display: none; }
+
+.menu ul { margin: 0; padding: 0; list-style: none; }
+
+.menu li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 6px 2px 20px;
+  position: relative;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.menu li.selected { background: #1b2440; }
+.menu li.selected::before { content: "▶"; position: absolute; left: 3px; color: var(--accent); }
+.menu li.disabled { color: #6c7793; cursor: default; }
+.menu li .sub { color: #9fb0d0; font-size: 13px; }
+.menu li.selected .sub { color: #cbd5f0; }
+
+/* つよさ */
+.sheet {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 262px;
+  max-width: min(92%, 420px);
+  font-size: 14px;
+}
+
+.sheet h2 { margin: 0 0 8px; font-size: 13px; color: var(--accent); letter-spacing: 0.12em; }
+.sheet dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; }
+.sheet dl div { display: flex; justify-content: space-between; gap: 10px; }
+.sheet dl div.full { grid-column: 1 / -1; }
+.sheet dt { margin: 0; color: #9fb0d0; font-size: 12px; }
+.sheet dd { margin: 0; font-variant-numeric: tabular-nums; }
+.sheet-hint { margin: 10px 0 0; font-size: 11px; color: #7d8aa8; text-align: right; }
+
+/* ---------------------------------------------------------------- タイトル */
+
+.title {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 30%, #16213f, #04050b 70%);
+  z-index: 5;
+  padding: 20px;
+  text-align: center;
+}
+
+.title[hidden] { display: none; }
+
+.title-inner { max-width: 460px; }
+.title-sub { margin: 0; font-size: 12px; letter-spacing: 0.3em; color: #8fa0c4; }
+
+.title h2 {
+  margin: 6px 0 14px;
+  font-size: clamp(30px, 8vw, 52px);
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  text-shadow: 0 0 18px rgba(255, 212, 59, 0.35);
+}
+
+.title-lead { margin: 0 0 22px; font-size: 13px; line-height: 1.9; color: #d3dbef; }
+.title-menu { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+
+.title-help { margin: 22px 0 0; font-size: 11px; color: #7d8aa8; line-height: 1.8; }
+
+button.primary {
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: #101528;
+  border: 3px solid var(--win-border);
+  border-radius: 6px;
+  padding: 8px 30px;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+}
+
+button.primary:hover { background: #1b2440; }
+
+/* ---------------------------------------------------------------- 操作パネル */
+
+.pad {
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
+  background: #080a12;
+  border-top: 2px solid #1d2233;
+  touch-action: none;
+}
+
+.dpad {
+  position: relative;
+  width: 132px;
+  height: 132px;
+}
+
+.dpad-center {
+  position: absolute;
+  left: 44px;
+  top: 44px;
+  width: 44px;
+  height: 44px;
+  background: #141a2b;
+  border-radius: 6px;
+}
+
+.dbtn {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  background: #1b2338;
+  border: 2px solid #2f3c5c;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dbtn:active, .dbtn.on { background: #33456e; }
+.dbtn.up { left: 44px; top: 0; }
+.dbtn.down { left: 44px; top: 88px; }
+.dbtn.left { left: 0; top: 44px; }
+.dbtn.right { left: 88px; top: 44px; }
+
+.dbtn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+}
+
+.dbtn.up::after { border-bottom-color: #cfd8f5; transform: translateY(-4px); }
+.dbtn.down::after { border-top-color: #cfd8f5; transform: translateY(4px); }
+.dbtn.left::after { border-right-color: #cfd8f5; transform: translateX(-4px); }
+.dbtn.right::after { border-left-color: #cfd8f5; transform: translateX(4px); }
+
+.abtn-group { display: flex; align-items: center; gap: 14px; }
+
+.abtn {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  border: 3px solid var(--win-border);
+  border-radius: 50%;
+  width: 84px;
+  height: 84px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+
+.abtn.a { background: #2a3d7a; }
+.abtn.b { background: #3a2a4a; width: 66px; height: 66px; font-size: 12px; }
+.abtn:active { filter: brightness(1.4); }
+
+/* ---------------------------------------------------------------- 画面サイズ */
+
+.only-narrow { display: none; }
+
+@media (max-width: 860px), (pointer: coarse) {
+  .pad { display: flex; }
+  .only-wide { display: none; }
+  .only-narrow { display: inline; }
+  .message { font-size: 14px; min-height: 84px; }
+  .menu { bottom: 104px; font-size: 14px; }
+  .topbar h1 { font-size: 13px; }
+}
+
+@media (max-width: 420px) {
+  .dpad { width: 114px; height: 114px; }
+  .dbtn { width: 38px; height: 38px; }
+  .dpad-center { left: 38px; top: 38px; width: 38px; height: 38px; }
+  .dbtn.up { left: 38px; top: 0; }
+  .dbtn.down { left: 38px; top: 76px; }
+  .dbtn.left { left: 0; top: 38px; }
+  .dbtn.right { left: 76px; top: 38px; }
+  .abtn { width: 70px; height: 70px; font-size: 12px; }
+  .abtn.b { width: 56px; height: 56px; font-size: 11px; }
+}
+
+@media (min-width: 861px) and (pointer: fine) {
+  .stage { max-width: 1100px; width: 100%; margin: 0 auto; }
+}

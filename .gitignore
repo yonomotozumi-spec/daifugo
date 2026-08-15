@@ -2,4 +2,5 @@ node_modules/
 package-lock.json
 test/screenshots/
 fishing/test/screenshots/
+rpg/test/screenshots/
 .DS_Store

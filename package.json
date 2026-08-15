@@ -1,14 +1,15 @@
 {
   "name": "daifugo",
   "version": "1.0.0",
-  "description": "ブラウザで遊べる大富豪（大貧民）と釣りゲーム。ビルド不要の素の HTML + ES Modules。",
+  "description": "ブラウザで遊べる大富豪（大貧民）・釣りゲーム・RPG。ビルド不要の素の HTML + ES Modules。",
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node --test test/*.test.js fishing/test/*.test.js",
+    "test": "node --test test/*.test.js fishing/test/*.test.js rpg/test/*.test.js",
     "start": "npx --yes http-server . -p 8080 -c-1",
     "test:browser": "node test/browser.smoke.mjs",
     "test:browser:fishing": "node fishing/test/browser.smoke.mjs",
+    "test:browser:rpg": "node rpg/test/browser.smoke.mjs",
     "test:mobile": "node fishing/test/mobile.smoke.mjs"
   },
   "keywords": [
@@ -17,7 +18,8 @@
     "javascript",
     "game",
     "fishing",
-    "pwa"
+    "pwa",
+    "rpg"
   ],
   "license": "MIT"
 }
