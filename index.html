@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>大富豪 — ブラウザで遊べるカードゲーム</title>
+<meta name="description" content="CPU 3人と対戦できる大富豪（大貧民）。革命・8切り・縛り・階段・スペ3返しに対応。">
+<link rel="stylesheet" href="src/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🃏</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>大富豪</h1>
+  <div class="badges">
+    <span class="badge" id="badge-round">ラウンド 1</span>
+    <span class="badge badge-alert hidden" id="badge-revolution">革命中</span>
+    <span class="badge badge-lock hidden" id="badge-lock">縛り</span>
+  </div>
+  <button type="button" class="ghost" id="btn-settings" aria-haspopup="dialog">ルール設定</button>
+</header>
+
+<main class="table">
+  <section class="opponents" id="opponents" aria-label="対戦相手"></section>
+
+  <section class="field" aria-live="polite">
+    <div class="field-slot" id="field-slot">
+      <p class="field-empty" id="field-empty">場は空です — 好きな手から出せます</p>
+      <div class="field-cards" id="field-cards"></div>
+    </div>
+    <p class="field-note" id="field-note"></p>
+  </section>
+
+  <section class="me" aria-label="あなたの手札">
+    <div class="me-head">
+      <span class="me-name">あなた <span class="title-chip hidden" id="my-title"></span></span>
+      <span class="me-count" id="my-count">13枚</span>
+    </div>
+    <div class="hand" id="hand" role="group" aria-label="手札"></div>
+    <div class="controls">
+      <button type="button" id="btn-play" class="primary" disabled>出す</button>
+      <button type="button" id="btn-pass" disabled>パス</button>
+      <button type="button" id="btn-clear" class="ghost" disabled>選択解除</button>
+      <button type="button" id="btn-hint" class="ghost">ヒント</button>
+    </div>
+    <p class="message" id="message" role="status"></p>
+  </section>
+</main>
+
+<aside class="sidebar">
+  <h2>スコア</h2>
+  <ol class="scores" id="scores"></ol>
+  <h2>実況</h2>
+  <ol class="log" id="log" aria-live="polite"></ol>
+</aside>
+
+<!-- カード交換 -->
+<dialog id="dlg-exchange">
+  <h2>カード交換</h2>
+  <p id="exchange-text"></p>
+  <div class="hand hand-modal" id="exchange-hand"></div>
+  <menu>
+    <button type="button" class="ghost" id="exchange-auto">自動で選ぶ</button>
+    <button type="button" class="primary" id="exchange-ok" disabled>この2枚を渡す</button>
+  </menu>
+</dialog>
+
+<!-- ラウンド結果 -->
+<dialog id="dlg-result">
+  <h2 id="result-title">ラウンド終了</h2>
+  <ol class="result-list" id="result-list"></ol>
+  <menu>
+    <button type="button" class="primary" id="result-next">次のラウンドへ</button>
+  </menu>
+</dialog>
+
+<!-- ルール設定 -->
+<dialog id="dlg-settings">
+  <h2>ルール設定</h2>
+  <p class="hint">変更すると新しいゲームを始めます。</p>
+  <form id="settings-form">
+    <label><input type="checkbox" name="revolution"> <span><b>革命</b>同ランク4枚・5枚以上の階段で強弱が逆転</span></label>
+    <label><input type="checkbox" name="eightCut"> <span><b>8切り</b>8を含む手を出すと場が流れて続けて親</span></label>
+    <label><input type="checkbox" name="suitLock"> <span><b>縛り</b>同じスートが2回続くとそのスートのみ</span></label>
+    <label><input type="checkbox" name="sequence"> <span><b>階段</b>同じスートの3枚以上の連番を出せる</span></label>
+    <label><input type="checkbox" name="spade3"> <span><b>スペ3返し</b>ジョーカー1枚に♠3で勝てる</span></label>
+    <label><input type="checkbox" name="exchange"> <span><b>カード交換</b>2ラウンド目以降に上位と下位で交換</span></label>
+    <menu>
+      <button type="button" class="ghost" id="settings-cancel">閉じる</button>
+      <button type="submit" class="primary">この設定で始める</button>
+    </menu>
+  </form>
+</dialog>
+
+<script type="module" src="src/ui.js"></script>
+</body>
+</html>

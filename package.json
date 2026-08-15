@@ -1,0 +1,19 @@
+{
+  "name": "daifugo",
+  "version": "1.0.0",
+  "description": "ブラウザで遊べる大富豪（大貧民）。CPU 3人と対戦できるカードゲーム。",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "npx --yes http-server . -p 8080 -c-1",
+    "test:browser": "node test/browser.smoke.mjs"
+  },
+  "keywords": [
+    "daifugo",
+    "card-game",
+    "javascript",
+    "game"
+  ],
+  "license": "MIT"
+}
