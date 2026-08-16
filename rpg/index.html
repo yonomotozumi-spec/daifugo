@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>よあけのつるぎ — ブラウザで遊べる RPG</title>
+<meta name="description" content="仲間を集め、ふたつの欠片から 星のしずく をつくり、まおうの城へ。ブラウザで遊べる王道ファンタジー RPG。">
+<link rel="stylesheet" href="src/style.css">
+<meta name="theme-color" content="#0b1020">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚔️</text></svg>">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>よあけのつるぎ</h1>
+  <div class="topbar-links">
+    <button type="button" id="btn-sound" class="sound-btn" aria-pressed="true" title="音を消す／出す（M）">🔊</button>
+    <a href="../">🃏 大富豪</a>
+    <a href="../fishing/">🎣 釣り</a>
+  </div>
+</header>
+
+<main class="stage" id="stage">
+  <canvas id="scene" aria-label="ぼうけんの画面"></canvas>
+
+  <!-- パーティのようす -->
+  <div class="party" id="party"></div>
+  <div class="window gold" id="gold"><span class="gold-label">G</span><span id="hud-gold">30</span></div>
+
+  <!-- 場所の名前 -->
+  <div class="place" id="place" hidden></div>
+
+  <!-- 敵のようす（戦闘中） -->
+  <div class="window enemy" id="enemy" hidden>
+    <span class="enemy-name" id="enemy-name"></span>
+    <span class="gauge"><i id="enemy-gauge"></i></span>
+  </div>
+
+  <!-- メッセージ -->
+  <div class="window message" id="message" hidden>
+    <p id="message-text"></p>
+    <span class="cursor" id="message-cursor">▼</span>
+  </div>
+
+  <!-- コマンド／メニュー -->
+  <div class="window menu" id="menu" hidden>
+    <h2 id="menu-title" hidden></h2>
+    <ul id="menu-list" role="menu"></ul>
+  </div>
+
+  <!-- ステータス表示（つよさ） -->
+  <div class="window sheet" id="sheet" hidden>
+    <h2 id="sheet-title">つよさ</h2>
+    <dl id="sheet-body"></dl>
+    <p class="sheet-hint">Enter / タップで とじる</p>
+  </div>
+
+  <!-- タイトル画面 -->
+  <div class="title" id="title">
+    <div class="title-inner">
+      <p class="title-sub">ブラウザで遊べる RPG</p>
+      <h2>よあけのつるぎ</h2>
+      <p class="title-lead">まおう ザルガスが よみがえった。<br>仲間を集め、星のしずく を取りもどし、夜明けを 世界に。</p>
+      <div class="title-menu">
+        <button type="button" class="primary" id="btn-continue" hidden>つづきから</button>
+        <button type="button" class="primary" id="btn-new">はじめから</button>
+      </div>
+      <p class="title-help">
+        <span class="only-wide">移動：← ↑ → ↓ ／ WASD　　決定：Enter または Z　　メニュー：Esc または X　　音：M</span>
+        <span class="only-narrow">画面下のボタンで 移動・決定ができます</span>
+      </p>
+    </div>
+  </div>
+</main>
+
+<!-- スマホ用の操作パネル -->
+<div class="pad" id="pad">
+  <div class="dpad">
+    <button type="button" class="dbtn up" data-dir="up" aria-label="上"></button>
+    <button type="button" class="dbtn left" data-dir="left" aria-label="左"></button>
+    <button type="button" class="dbtn right" data-dir="right" aria-label="右"></button>
+    <button type="button" class="dbtn down" data-dir="down" aria-label="下"></button>
+    <span class="dpad-center"></span>
+  </div>
+  <div class="abtn-group">
+    <button type="button" class="abtn b" id="btn-b">メニュー</button>
+    <button type="button" class="abtn a" id="btn-a">けってい</button>
+  </div>
+</div>
+
+<script type="module" src="src/ui.js"></script>
+</body>
+</html>
