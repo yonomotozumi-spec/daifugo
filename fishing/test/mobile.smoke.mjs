@@ -44,6 +44,17 @@ async function playOn(label, deviceName) {
   const size = await page.locator('#btn-action').boundingBox();
   if (size.height < 44) fail(`${label}: 操作ボタンが小さすぎる (${size.height}px)`);
 
+  // 長押しでコピーのメニューが出ないこと（リールを長押しで巻くので致命的）
+  const pressable = ['#btn-action', '#stage', '#btn-shop', '#scene'];
+  for (const sel of pressable) {
+    const css = await page.locator(sel).evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { select: s.webkitUserSelect || s.userSelect, callout: s.webkitTouchCallout };
+    });
+    if (css.select !== 'none') fail(`${label}: ${sel} が長押しで選択できてしまう (${css.select})`);
+    if (css.callout && css.callout !== 'none') fail(`${label}: ${sel} で長押しメニューが出る (${css.callout})`);
+  }
+
   let caught = false;
   for (let i = 0; i < 600 && !caught; i++) {
     const mode = await page.evaluate(() => window.fishing.mode);
@@ -137,6 +148,27 @@ async function checkManifest() {
   await ctx.close();
 }
 
+/**
+ * iOS 向けの指定が配信物に入っているか。
+ * -webkit-touch-callout は Chromium が実装していないので、
+ * 計算済みスタイルではなく CSS そのものを読んで確かめる。
+ */
+async function checkIosCss() {
+  const ctx = await browser.newContext(devices['iPhone 13']);
+  const page = await ctx.newPage();
+  const css = await (await page.request.get(new URL('src/style.css', BASE).href)).text();
+  for (const decl of ['-webkit-touch-callout: none', '-webkit-user-select: none', '-webkit-tap-highlight-color']) {
+    if (!css.includes(decl)) fail(`style.css に ${decl} がない`);
+  }
+
+  const html = await (await page.request.get(BASE)).text();
+  for (const tag of ['apple-mobile-web-app-capable', 'apple-mobile-web-app-status-bar-style', 'viewport-fit=cover']) {
+    if (!html.includes(tag)) fail(`index.html に ${tag} がない`);
+  }
+  console.log('iOS 向けの指定: 長押しメニュー抑止・全画面・切り欠き対応すべてあり');
+  await ctx.close();
+}
+
 /** 通信を切っても遊べるか。 */
 async function checkOffline() {
   const ctx = await browser.newContext(devices['iPhone 13']);
@@ -172,6 +204,7 @@ await playOn('iphone', 'iPhone 13');
 await playOn('iphone-landscape', 'iPhone 13 landscape');
 await playOn('ipad', 'iPad (gen 7)');
 await checkManifest();
+await checkIosCss();
 await checkOffline();
 
 await browser.close();
