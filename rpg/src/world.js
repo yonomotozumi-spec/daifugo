@@ -81,7 +81,7 @@ const town = {
   npcs: [
     {
       id: 'guard', x: 9, y: 13, kind: 'talk', look: { cloth: '#4d7cfe', hair: '#3b4252' }, name: '兵士',
-      lines: ['この村を出ると まものが おそってくる。', 'HP が 減ったら 早めに 村へ もどるんだ。\n無理は いかんぞ。'],
+      lines: ['この村を出ると まものが おそってくる。', 'ひとり旅は むぼうだ。\nやどやに 腕の立つ 男が 泊まっているぞ。'],
     },
     {
       id: 'villager1', x: 4, y: 12, kind: 'talk', look: { cloth: '#e8a33d', hair: '#8d5524' }, name: '村人',
@@ -133,8 +133,13 @@ const inn = room('inn', 'やどや', [
     lines: ['いらっしゃい。\nひとばん とまって いくかね？'],
   },
   {
-    id: 'guest', x: 2, y: 4, kind: 'talk', look: { cloth: '#a5d8ff', hair: '#37474f' }, name: '旅人',
-    lines: ['ねむると HP も MP も 元どおりさ。', 'ぼうけんの きろくも つけておいてくれる。'],
+    id: 'garon', x: 2, y: 4, kind: 'join', look: { cloth: '#c0392b', hair: '#4b3621' }, name: 'ガロン',
+    member: { cls: 'warrior', name: 'ガロン', minLevel: 2 },
+    lines: [
+      'おれは 流れの せんし ガロン。\n腕っぷしなら 村いちばんだ。',
+      '魔王を たおしに 行くんだろ？\nおれも 連れて行ってくれ！',
+    ],
+    joinLines: ['前は まかせておけ！\n背中は 守ってやる。'],
   },
 ]);
 inn.warps = [{ x: 4, y: 6, to: 'town', tx: 4, ty: 5, dir: 'down' }];
@@ -172,6 +177,17 @@ const house = room(
     {
       id: 'scribe', x: 2, y: 4, kind: 'save', look: { cloth: '#dee2e6', hair: '#495057' }, name: '書き役',
       lines: ['ぼうけんの きろくを つけておこうかね？'],
+    },
+    {
+      id: 'mina', x: 6, y: 1, kind: 'join', look: { cloth: '#f1f3f5', hair: '#8d6e63' }, name: 'ミナ',
+      member: { cls: 'priest', name: 'ミナ', minLevel: 3 },
+      require: 'elder',
+      waitLines: ['わたしは そうりょの ミナ。', 'まずは ちょうろうさまの お話を お聞きなさい。'],
+      lines: [
+        'わたしは そうりょの ミナ。\n傷を いやす 術を 心得ています。',
+        'ゆうしゃさま。\nわたしも おともさせて ください。',
+      ],
+      joinLines: ['ホイミなら まかせてください。\n倒れた仲間も いずれ 起こせます。'],
     },
   ],
   [{ id: 'house-1', x: 6, y: 4, item: 'herb' }],
@@ -289,12 +305,24 @@ const cave = {
     '########################',
   ],
   warps: [{ x: 11, y: 16, to: 'world', tx: 29, ty: 25, dir: 'down' }],
-  npcs: [],
+  npcs: [
+    {
+      id: 'sera', x: 11, y: 6, kind: 'join', look: { cloth: '#9775fa', hair: '#343a40' }, name: 'セラ',
+      member: { cls: 'mage', name: 'セラ', minLevel: 7 },
+      lines: [
+        'たすかった……！\nわたしは まほうつかいの セラ。',
+        'ひかりのたま を さがしに来て\n魔物に かこまれてしまったの。',
+        'お礼に わたしの 魔法を 役立てて。\n連れて行って くれる？',
+      ],
+      joinLines: ['ギラなら まかせて。\n奥に すすみましょう！'],
+    },
+  ],
   chests: [
     { id: 'cave-1', x: 2, y: 1, item: 'seedStr' },
     { id: 'cave-2', x: 21, y: 1, gold: 320 },
     { id: 'cave-3', x: 11, y: 4, item: 'orb', fanfare: true },
     { id: 'cave-4', x: 14, y: 9, item: 'water' },
+    { id: 'cave-5', x: 2, y: 14, item: 'leaf' },
   ],
   signs: [],
 };
@@ -350,6 +378,7 @@ const castle = {
     { id: 'castle-2', x: 21, y: 10, gear: 'lightArmor' },
     { id: 'castle-3', x: 7, y: 7, item: 'seedHp' },
     { id: 'castle-4', x: 16, y: 13, gold: 800 },
+    { id: 'castle-5', x: 6, y: 4, item: 'leaf' },
   ],
   signs: [],
 };

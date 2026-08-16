@@ -92,27 +92,47 @@ body {
 
 .window[hidden] { display: none; }
 
-/* ようす（左上） */
-.hud {
+/* パーティのようす（左上） */
+.party {
+  position: absolute;
   top: 10px;
   left: 10px;
-  min-width: 108px;
-  font-size: 13px;
-  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.hud-name {
-  color: var(--accent);
+.party .member {
+  position: static;
+  min-width: 132px;
+  padding: 4px 9px;
   font-size: 12px;
-  letter-spacing: 0.08em;
-  margin-bottom: 2px;
+  line-height: 1.4;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 10px;
 }
 
-.hud dl { margin: 0; display: grid; gap: 1px; }
-.hud dl div { display: flex; justify-content: space-between; gap: 10px; }
-.hud dt { margin: 0; color: #9fb0d0; font-size: 11px; }
-.hud dd { margin: 0; font-variant-numeric: tabular-nums; }
-.hud dd.low { color: var(--danger); }
+.member .m-name { color: var(--accent); letter-spacing: 0.06em; }
+.member .m-lv { color: #9fb0d0; font-size: 11px; }
+.member .m-hp, .member .m-mp { font-variant-numeric: tabular-nums; font-size: 12px; }
+.member .m-mp { color: #9fb0d0; text-align: right; }
+.member .m-hp.low { color: var(--danger); }
+.member.down { opacity: 0.55; }
+.member.down .m-name { color: var(--danger); }
+
+.gold {
+  top: auto;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 10px;
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gold-label { color: #9fb0d0; }
 
 /* 場所の名前 */
 .place {
@@ -189,7 +209,7 @@ body {
 /* コマンド／メニュー */
 .menu {
   left: 10px;
-  bottom: 114px;
+  bottom: 118px;
   min-width: 168px;
   font-size: 15px;
   padding: 8px 10px;
@@ -379,6 +399,12 @@ button.primary:hover { background: #1b2440; }
   .message { font-size: 14px; min-height: 84px; }
   .menu { bottom: 104px; font-size: 14px; }
   .topbar h1 { font-size: 13px; }
+}
+
+@media (max-width: 560px), (pointer: coarse) {
+  .party { gap: 4px; }
+  .party .member { min-width: 112px; padding: 3px 7px; font-size: 11px; }
+  .member .m-hp, .member .m-mp { font-size: 11px; }
 }
 
 @media (max-width: 420px) {

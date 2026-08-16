@@ -24,7 +24,8 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
 const shot = (name) => page.screenshot({ path: `${OUT}${name}.png` });
-const hero = () => page.evaluate(() => ({ ...window.rpg.hero }));
+const game = () => page.evaluate(() => JSON.parse(JSON.stringify(window.rpg.save)));
+const partySize = () => page.evaluate(() => window.rpg.party.length);
 const mode = () => page.evaluate(() => window.rpg.mode);
 const pending = () => page.evaluate(() => window.rpg.pending?.kind || null);
 
@@ -44,7 +45,7 @@ async function clearMessages(limit = 40) {
 
 /** 戦闘が終わるまで コマンドを選び続ける。 */
 async function fight(command) {
-  for (let i = 0; i < 200 && (await mode()) === 'battle'; i++) {
+  for (let i = 0; i < 500 && (await mode()) === 'battle'; i++) {
     if ((await pending()) === 'menu') {
       if (command === 'flee') {
         await page.keyboard.press('ArrowUp');      // いちばん下＝にげる
@@ -81,7 +82,8 @@ await shot('01-title');
 await page.click('#btn-new');
 await page.waitForTimeout(400);
 await clearMessages();
-ok('村から ぼうけんが始まる', (await hero()).map === 'town' && (await mode()) === 'field');
+ok('村から ぼうけんが始まる', (await game()).map === 'town' && (await mode()) === 'field');
+ok('はじめは ゆうしゃ ひとり', (await partySize()) === 1);
 await shot('02-town');
 
 // ---------------------------------------------------------------- 道具屋で買い物
@@ -91,7 +93,7 @@ await page.waitForTimeout(200);
 await page.keyboard.press('ArrowUp');                 // カウンターの向こうの店主を向く
 await page.waitForTimeout(200);
 
-const before = await hero();
+const before = await game();
 await page.keyboard.press('Enter');                   // 話しかける
 await page.waitForTimeout(300);
 await clearMessages(4);
@@ -101,10 +103,34 @@ await page.waitForTimeout(200);
 await page.keyboard.press('Enter');                   // やくそう
 await page.waitForTimeout(300);
 await clearMessages(4);
-const afterBuy = await hero();
+const afterBuy = await game();
 ok('やくそうを 買えた', afterBuy.items.herb === before.items.herb + 1 && afterBuy.gold < before.gold);
 
 // メニューを閉じて店を出る
+for (let i = 0; i < 6 && (await mode()) !== 'field'; i++) {
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  await clearMessages(3);
+}
+
+// ---------------------------------------------------------------- 仲間にする
+
+await page.evaluate(() => window.rpg.teleport('inn', 2, 5));
+await page.waitForTimeout(250);
+await page.keyboard.press('ArrowUp');            // やどやの せんし を向く
+await page.waitForTimeout(200);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+for (let i = 0; i < 12 && (await pending()) === 'message'; i++) {   // 口上を読む
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+}
+await shot('03b-recruit');
+await page.keyboard.press('Enter');              // 「はい」
+await page.waitForTimeout(250);
+await clearMessages(6);
+ok('せんしが 仲間になった', (await partySize()) === 2);
+
 for (let i = 0; i < 6 && (await mode()) !== 'field'; i++) {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
@@ -117,7 +143,7 @@ await page.evaluate(() => window.rpg.teleport('town', 8, 11));
 await page.waitForTimeout(200);
 await walk('down', 4);
 await page.waitForTimeout(300);
-ok('村の外に 出られた', (await hero()).map === 'world');
+ok('村の外に 出られた', (await game()).map === 'world');
 await shot('04-world');
 
 // ---------------------------------------------------------------- 魔物と戦う
@@ -138,54 +164,61 @@ if (met) {
 
 // ---------------------------------------------------------------- 勝って レベルが上がる
 
-await page.evaluate(() => { window.rpg.hero.exp = 100; window.rpg.hero.weapon = 'steel'; });
+await page.evaluate(() => {
+  for (const m of window.rpg.party) { m.exp = 100; m.weapon = 'steel'; m.hp = 60; }
+});
 await page.evaluate(() => window.rpg.encounter('slime'));
 await page.waitForTimeout(600);
 await fight('attack');
-const won = await hero();
-ok('スライムに 勝って経験値をもらえた', won.exp > 100);
+const won = await game();
+ok('スライムに 勝って 全員が経験値をもらえた', won.party.every((m) => m.exp > 100));
 await shot('06-after-battle');
 
 // ---------------------------------------------------------------- ほらあな・城
 
 await page.evaluate(() => window.rpg.teleport('cave', 11, 16));
 await page.waitForTimeout(400);
-ok('ほらあなに 入れた', (await hero()).map === 'cave');
+ok('ほらあなに 入れた', (await game()).map === 'cave');
 await shot('07-cave');
 
-await page.evaluate(() => { window.rpg.hero.exp = 5200; window.rpg.hero.weapon = 'light'; window.rpg.hero.armor = 'lightArmor'; });
-await page.evaluate(() => window.rpg.teleport('castle', 11, 4));
+await page.evaluate(() => {
+  for (const m of window.rpg.party) { m.exp = 5200; m.weapon = 'light'; m.armor = 'lightArmor'; }
+  window.rpg.teleport('castle', 11, 4);
+});
 await page.waitForTimeout(400);
 await shot('08-castle');
 
 // ---------------------------------------------------------------- 結界とラスボス
 
 await page.evaluate(() => {
-  window.rpg.hero.items = { herb: 6 };            // ひかりのたま は まだ持っていない
+  window.rpg.save.items = { herb: 6 };            // ひかりのたま は まだ持っていない
   window.rpg.teleport('world', 18, 3);
 });
 await page.waitForTimeout(300);
 await walk('up', 1);
 await page.waitForTimeout(400);
-ok('たまが無いと 結界に はじかれる', (await hero()).map === 'world');
+ok('たまが無いと 結界に はじかれる', (await game()).map === 'world');
 await shot('09-barrier');
 await clearMessages(4);
 
-await page.evaluate(() => { window.rpg.hero.items.orb = 1; });
+await page.evaluate(() => { window.rpg.save.items.orb = 1; });
 await walk('up', 1);
 await page.waitForTimeout(400);
 await clearMessages(4);
-ok('ひかりのたまで 結界が破れる', (await hero()).map === 'castle');
+ok('ひかりのたまで 結界が破れる', (await game()).map === 'castle');
 
 // 玉座の魔王に 話しかけて 最後の戦い（演出の確認なので 主人公は思いきり強くしておく）
 await page.evaluate(() => {
-  const h = window.rpg.hero;
-  h.exp = 7800;
-  h.weapon = 'light';
-  h.armor = 'lightArmor';
-  h.shield = 'mirrorShield';
-  h.bonusHp = 500;
-  h.hp = 700;
+  for (const m of window.rpg.party) {
+    m.exp = 7800;
+    m.weapon = 'light';
+    m.armor = 'lightArmor';
+    m.shield = 'mirrorShield';
+    m.bonusHp = 800;
+    m.bonusStr = 150;      // 演出の確認なので 短く終わらせる
+    m.hp = 1000;
+    m.mp = 200;
+  }
   window.rpg.teleport('castle', 11, 3);
 });
 await page.waitForTimeout(300);
@@ -199,13 +232,13 @@ for (let i = 0; i < 20 && (await mode()) !== 'battle'; i++) {   // 前口上を�
   await page.waitForTimeout(150);
 }
 await fight('attack');
-const cleared = await hero();
+const cleared = await game();
 ok('魔王を たおして エンディングになる', cleared.flags.bossDead === true && cleared.map === 'town');
 await shot('11-ending');
 
 // ---------------------------------------------------------------- セーブ
 
-await page.evaluate(() => window.rpg.save());
+await page.evaluate(() => window.rpg.persist());
 const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('rpg:save')));
 ok('ぼうけんの きろくが 残る', saved && saved.flags.bossDead === true);
 

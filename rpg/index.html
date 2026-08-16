@@ -25,16 +25,9 @@
 <main class="stage" id="stage">
   <canvas id="scene" aria-label="ぼうけんの画面"></canvas>
 
-  <!-- 主人公のようす -->
-  <div class="window hud" id="hud">
-    <div class="hud-name" id="hud-name">ゆうしゃ</div>
-    <dl>
-      <div><dt>Lv</dt><dd id="hud-level">1</dd></div>
-      <div><dt>HP</dt><dd id="hud-hp">20</dd></div>
-      <div><dt>MP</dt><dd id="hud-mp">0</dd></div>
-      <div><dt>G</dt><dd id="hud-gold">30</dd></div>
-    </dl>
-  </div>
+  <!-- パーティのようす -->
+  <div class="party" id="party"></div>
+  <div class="window gold" id="gold"><span class="gold-label">G</span><span id="hud-gold">30</span></div>
 
   <!-- 場所の名前 -->
   <div class="place" id="place" hidden></div>

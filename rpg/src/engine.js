@@ -2,6 +2,9 @@
  * RPG「ひかりのつるぎ」のルールエンジン。
  * DOM に依存しないので、ブラウザと Node の両方から読み込める。
  * マップは world.js、描画は scene.js、画面まわりは ui.js に任せる。
+ *
+ * セーブデータ（save）は「パーティ 1 つぶん」の入れもの:
+ *   { v, party: [なかま…], gold, items, flags, chests, steps, map, x, y, dir }
  */
 
 // ---------------------------------------------------------------- 乱数
@@ -38,29 +41,29 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * レベルごとの成長表。exp は「そのレベルになるのに必要な累計経験値」。
- * spells はそのレベルで覚える呪文。
+ * この表は ゆうしゃの伸びかたで、仲間は職業ごとの倍率をかけて使う。
  */
 export const LEVELS = [
-  { level: 1, exp: 0, hp: 20, mp: 0, str: 6, agi: 5, spells: [] },
-  { level: 2, exp: 8, hp: 26, mp: 0, str: 9, agi: 7, spells: [] },
-  { level: 3, exp: 22, hp: 32, mp: 6, str: 12, agi: 9, spells: ['hoimi'] },
-  { level: 4, exp: 45, hp: 38, mp: 10, str: 15, agi: 11, spells: ['gira'] },
-  { level: 5, exp: 80, hp: 46, mp: 14, str: 19, agi: 13, spells: [] },
-  { level: 6, exp: 130, hp: 54, mp: 18, str: 23, agi: 15, spells: ['rura'] },
-  { level: 7, exp: 200, hp: 63, mp: 23, str: 27, agi: 17, spells: [] },
-  { level: 8, exp: 290, hp: 72, mp: 28, str: 31, agi: 20, spells: ['behoimi'] },
-  { level: 9, exp: 420, hp: 82, mp: 33, str: 36, agi: 23, spells: [] },
-  { level: 10, exp: 600, hp: 93, mp: 38, str: 41, agi: 26, spells: ['begirama'] },
-  { level: 11, exp: 850, hp: 104, mp: 44, str: 46, agi: 29, spells: [] },
-  { level: 12, exp: 1150, hp: 116, mp: 50, str: 52, agi: 32, spells: ['baikiruto'] },
-  { level: 13, exp: 1550, hp: 128, mp: 56, str: 58, agi: 35, spells: [] },
-  { level: 14, exp: 2050, hp: 140, mp: 62, str: 64, agi: 38, spells: [] },
-  { level: 15, exp: 2600, hp: 153, mp: 69, str: 70, agi: 41, spells: ['behoma'] },
-  { level: 16, exp: 3300, hp: 166, mp: 76, str: 77, agi: 44, spells: [] },
-  { level: 17, exp: 4200, hp: 180, mp: 83, str: 84, agi: 47, spells: [] },
-  { level: 18, exp: 5200, hp: 194, mp: 90, str: 91, agi: 50, spells: ['ionazun'] },
-  { level: 19, exp: 6400, hp: 209, mp: 98, str: 98, agi: 53, spells: [] },
-  { level: 20, exp: 7800, hp: 225, mp: 106, str: 106, agi: 57, spells: [] },
+  { level: 1, exp: 0, hp: 20, mp: 0, str: 6, agi: 5 },
+  { level: 2, exp: 8, hp: 26, mp: 0, str: 9, agi: 7 },
+  { level: 3, exp: 22, hp: 32, mp: 6, str: 12, agi: 9 },
+  { level: 4, exp: 45, hp: 38, mp: 10, str: 15, agi: 11 },
+  { level: 5, exp: 80, hp: 46, mp: 14, str: 19, agi: 13 },
+  { level: 6, exp: 130, hp: 54, mp: 18, str: 23, agi: 15 },
+  { level: 7, exp: 200, hp: 63, mp: 23, str: 27, agi: 17 },
+  { level: 8, exp: 290, hp: 72, mp: 28, str: 31, agi: 20 },
+  { level: 9, exp: 420, hp: 82, mp: 33, str: 36, agi: 23 },
+  { level: 10, exp: 600, hp: 93, mp: 38, str: 41, agi: 26 },
+  { level: 11, exp: 850, hp: 104, mp: 44, str: 46, agi: 29 },
+  { level: 12, exp: 1150, hp: 116, mp: 50, str: 52, agi: 32 },
+  { level: 13, exp: 1550, hp: 128, mp: 56, str: 58, agi: 35 },
+  { level: 14, exp: 2050, hp: 140, mp: 62, str: 64, agi: 38 },
+  { level: 15, exp: 2600, hp: 153, mp: 69, str: 70, agi: 41 },
+  { level: 16, exp: 3300, hp: 166, mp: 76, str: 77, agi: 44 },
+  { level: 17, exp: 4200, hp: 180, mp: 83, str: 84, agi: 47 },
+  { level: 18, exp: 5200, hp: 194, mp: 90, str: 91, agi: 50 },
+  { level: 19, exp: 6400, hp: 209, mp: 98, str: 98, agi: 53 },
+  { level: 20, exp: 7800, hp: 225, mp: 106, str: 106, agi: 57 },
 ];
 
 export const MAX_LEVEL = LEVELS[LEVELS.length - 1].level;
@@ -80,42 +83,71 @@ export function expToNext(exp) {
   return next ? next.exp - exp : null;
 }
 
+/** そのレベルになるのに必要な累計経験値。 */
+export const expForLevel = (level) => levelRow(level).exp;
+
 // ---------------------------------------------------------------- 呪文
 
 export const SPELLS = [
   { id: 'hoimi', name: 'ホイミ', mp: 4, kind: 'heal', power: [28, 38], field: true, desc: 'HP を 30 ほど回復する' },
   { id: 'gira', name: 'ギラ', mp: 5, kind: 'attack', power: [16, 24], field: false, desc: '炎で 20 ほどのダメージ' },
-  { id: 'rura', name: 'ルーラ', mp: 6, kind: 'warp', field: true, battle: false, desc: 'はじまりの村へ飛んで帰る' },
+  { id: 'rarihoo', name: 'ラリホー', mp: 6, kind: 'sleep', field: false, desc: '魔物を 眠らせる' },
+  { id: 'rura', name: 'ルーラ', mp: 6, kind: 'warp', field: true, desc: 'はじまりの村へ飛んで帰る' },
   { id: 'behoimi', name: 'ベホイミ', mp: 8, kind: 'heal', power: [78, 98], field: true, desc: 'HP を 85 ほど回復する' },
   { id: 'begirama', name: 'ベギラマ', mp: 9, kind: 'attack', power: [40, 54], field: false, desc: '大きな炎で 45 ほどのダメージ' },
-  { id: 'baikiruto', name: 'バイキルト', mp: 10, kind: 'buff', field: false, desc: '戦闘のあいだ攻撃力が上がる' },
+  { id: 'baikiruto', name: 'バイキルト', mp: 10, kind: 'buff', field: false, desc: '仲間ひとりの攻撃力を上げる' },
+  { id: 'zaoral', name: 'ザオラル', mp: 12, kind: 'revive', field: true, desc: '死んだ仲間を 生き返らせる（不確実）' },
   { id: 'behoma', name: 'ベホマ', mp: 14, kind: 'heal', power: 'full', field: true, desc: 'HP を全回復する' },
   { id: 'ionazun', name: 'イオナズン', mp: 20, kind: 'attack', power: [90, 120], field: false, desc: '爆裂で 100 ほどのダメージ' },
 ];
 
 export const spellById = (id) => SPELLS.find((s) => s.id === id) || null;
 
-/** そのレベルまでに覚えている呪文。 */
-export function spellsOf(hero) {
-  const level = levelOf(hero.exp);
-  const ids = [];
-  for (const row of LEVELS) {
-    if (row.level > level) break;
-    ids.push(...row.spells);
-  }
-  return ids.map(spellById);
-}
+/** 味方ひとりを選ぶ呪文か。 */
+export const targetsAlly = (spell) => ['heal', 'revive', 'buff'].includes(spell.kind);
 
-export const knowsSpell = (hero, id) => spellsOf(hero).some((s) => s.id === id);
+// ---------------------------------------------------------------- 職業
+
+/**
+ * 仲間の職業。hp / mp / str / agi は LEVELS への倍率。
+ * spells は「そのレベルで覚える呪文」。
+ */
+export const CLASSES = {
+  hero: {
+    id: 'hero', name: 'ゆうしゃ', hp: 1, mp: 1, str: 1, agi: 1,
+    look: { cloth: '#3f8bff', hair: '#f6b93b', hero: true },
+    spells: { 3: ['hoimi'], 4: ['gira'], 6: ['rura'], 8: ['behoimi'], 10: ['begirama'], 12: ['baikiruto'], 15: ['behoma'], 18: ['ionazun'] },
+  },
+  warrior: {
+    id: 'warrior', name: 'せんし', hp: 1.32, mp: 0, str: 1.22, agi: 0.85,
+    look: { cloth: '#c0392b', hair: '#4b3621' },
+    spells: {},
+  },
+  priest: {
+    id: 'priest', name: 'そうりょ', hp: 0.86, mp: 1.35, str: 0.72, agi: 0.95, mpMin: 8,
+    look: { cloth: '#f1f3f5', hair: '#8d6e63' },
+    spells: { 1: ['hoimi'], 5: ['behoimi'], 9: ['zaoral'], 13: ['behoma'], 16: ['baikiruto'] },
+  },
+  mage: {
+    id: 'mage', name: 'まほうつかい', hp: 0.64, mp: 1.65, str: 0.6, agi: 1.1, mpMin: 10,
+    look: { cloth: '#9775fa', hair: '#343a40' },
+    spells: { 1: ['gira'], 3: ['rarihoo'], 7: ['begirama'], 11: ['baikiruto'], 15: ['ionazun'] },
+  },
+};
+
+export const classById = (id) => CLASSES[id] || CLASSES.hero;
+
+export const PARTY_LIMIT = 4;
 
 // ---------------------------------------------------------------- 道具
 
 export const ITEMS = [
-  { id: 'herb', name: 'やくそう', price: 24, kind: 'heal', power: 34, field: true, battle: true, desc: 'HP を 34 ほど回復する' },
-  { id: 'water', name: 'まほうのせいすい', price: 78, kind: 'mp', power: 26, field: true, battle: true, desc: 'MP を 26 回復する' },
+  { id: 'herb', name: 'やくそう', price: 24, kind: 'heal', power: 34, field: true, battle: true, ally: true, desc: 'HP を 34 ほど回復する' },
+  { id: 'water', name: 'まほうのせいすい', price: 78, kind: 'mp', power: 26, field: true, battle: true, ally: true, desc: 'MP を 26 回復する' },
   { id: 'wing', name: 'キメラのつばさ', price: 36, kind: 'warp', field: true, battle: false, desc: 'はじまりの村へ帰る' },
-  { id: 'seedStr', name: 'ちからのたね', price: 0, kind: 'seedStr', power: 5, field: true, battle: false, desc: 'ちからが永久に上がる' },
-  { id: 'seedHp', name: 'いのちのきのみ', price: 0, kind: 'seedHp', power: 15, field: true, battle: false, desc: '最大 HP が永久に上がる' },
+  { id: 'seedStr', name: 'ちからのたね', price: 0, kind: 'seedStr', power: 5, field: true, battle: false, ally: true, desc: 'ちからが永久に上がる' },
+  { id: 'seedHp', name: 'いのちのきのみ', price: 0, kind: 'seedHp', power: 15, field: true, battle: false, ally: true, desc: '最大 HP が永久に上がる' },
+  { id: 'leaf', name: 'せかいじゅのは', price: 0, kind: 'revive', field: true, battle: true, ally: true, desc: '死んだ仲間を 生き返らせる' },
   { id: 'orb', name: 'ひかりのたま', price: 0, kind: 'key', field: false, battle: false, desc: '魔王の城の結界を破るという宝玉' },
 ];
 
@@ -127,32 +159,32 @@ export const sellPrice = (id) => Math.floor((itemById(id)?.price || 0) / 2);
 // ---------------------------------------------------------------- 装備
 
 export const WEAPONS = [
-  { id: 'none', name: 'そぼくなこぶし', price: 0, atk: 0, shop: false },
-  { id: 'stick', name: 'ひのきのぼう', price: 20, atk: 3, shop: true },
-  { id: 'copper', name: 'どうのつるぎ', price: 140, atk: 12, shop: true },
-  { id: 'steel', name: 'はがねのつるぎ', price: 720, atk: 26, shop: true },
-  { id: 'flame', name: 'ほのおのつるぎ', price: 2600, atk: 42, shop: true },
-  { id: 'light', name: 'ひかりのつるぎ', price: 0, atk: 58, shop: false },
+  { id: 'none', name: 'そぼくなこぶし', price: 0, atk: 0 },
+  { id: 'stick', name: 'ひのきのぼう', price: 20, atk: 3 },
+  { id: 'copper', name: 'どうのつるぎ', price: 140, atk: 12 },
+  { id: 'steel', name: 'はがねのつるぎ', price: 720, atk: 26 },
+  { id: 'flame', name: 'ほのおのつるぎ', price: 2600, atk: 42 },
+  { id: 'light', name: 'ひかりのつるぎ', price: 0, atk: 58 },
 ];
 
 export const ARMORS = [
-  { id: 'none', name: 'ただのふく', price: 0, def: 0, shop: false },
-  { id: 'clothes', name: 'たびびとのふく', price: 30, def: 3, shop: true },
-  { id: 'leather', name: 'かわのよろい', price: 180, def: 8, shop: true },
-  { id: 'chain', name: 'くさりかたびら', price: 480, def: 14, shop: true },
-  { id: 'iron', name: 'てつのよろい', price: 1200, def: 22, shop: true },
-  { id: 'magic', name: 'まほうのよろい', price: 3000, def: 32, shop: true },
-  { id: 'lightArmor', name: 'ひかりのよろい', price: 0, def: 42, shop: false },
+  { id: 'none', name: 'ただのふく', price: 0, def: 0 },
+  { id: 'clothes', name: 'たびびとのふく', price: 30, def: 3 },
+  { id: 'leather', name: 'かわのよろい', price: 180, def: 8 },
+  { id: 'chain', name: 'くさりかたびら', price: 480, def: 14 },
+  { id: 'iron', name: 'てつのよろい', price: 1200, def: 22 },
+  { id: 'magic', name: 'まほうのよろい', price: 3000, def: 32 },
+  { id: 'lightArmor', name: 'ひかりのよろい', price: 0, def: 42 },
 ];
 
 export const SHIELDS = [
-  { id: 'none', name: 'なし', price: 0, def: 0, shop: false },
-  { id: 'leatherShield', name: 'かわのたて', price: 110, def: 5, shop: true },
-  { id: 'ironShield', name: 'てつのたて', price: 620, def: 12, shop: true },
-  { id: 'mirrorShield', name: 'みかがみのたて', price: 2400, def: 22, shop: true },
+  { id: 'none', name: 'なし', price: 0, def: 0 },
+  { id: 'leatherShield', name: 'かわのたて', price: 110, def: 5 },
+  { id: 'ironShield', name: 'てつのたて', price: 620, def: 12 },
+  { id: 'mirrorShield', name: 'みかがみのたて', price: 2400, def: 22 },
 ];
 
-/** 装備の種類。slot はセーブデータのキーでもある。 */
+/** 装備の種類。slot は仲間 1 人のデータのキーでもある。 */
 export const GEAR = [
   { slot: 'weapon', label: 'ぶき', list: WEAPONS },
   { slot: 'armor', label: 'よろい', list: ARMORS },
@@ -165,28 +197,44 @@ export function gearById(slot, id) {
   return group.list.find((g) => g.id === id) || group.list[0];
 }
 
-/** 全装備をひとつの配列で。店の品ぞろえづくりに使う。 */
+/** 「なし」をのぞいた全装備。店の品ぞろえづくりに使う。 */
 export const ALL_GEAR = GEAR.flatMap((g) => g.list.filter((item) => item.id !== 'none').map((item) => ({ ...item, slot: g.slot })));
 
 export const allGearById = (id) => ALL_GEAR.find((g) => g.id === id) || null;
 
-// ---------------------------------------------------------------- 主人公
+// ---------------------------------------------------------------- 仲間
 
 export const START = { map: 'town', x: 10, y: 11, dir: 'down' };
 
-export function createHero(name = 'ゆうしゃ') {
-  const hero = {
-    v: 1,
-    name,
-    exp: 0,
-    gold: 30,
-    hp: 20,
+export const SAVE_VERSION = 2;
+
+/** 仲間ひとりを作る。exp を渡すと そのぶんのレベルで生まれる。 */
+export function createMember(clsId = 'hero', name, exp = 0) {
+  const cls = classById(clsId);
+  const member = {
+    cls: cls.id,
+    name: name || cls.name,
+    exp: Math.max(0, Math.floor(exp)),
+    hp: 1,
     mp: 0,
     bonusHp: 0,
     bonusStr: 0,
     weapon: 'none',
     armor: 'none',
     shield: 'none',
+  };
+  const s = statsOf(member);
+  member.hp = s.maxHp;
+  member.mp = s.maxMp;
+  return member;
+}
+
+/** 新しい冒険のはじまり。パーティは ゆうしゃ ひとり。 */
+export function createSave(name = 'ゆうしゃ') {
+  return {
+    v: SAVE_VERSION,
+    party: [createMember('hero', name)],
+    gold: 30,
     items: { herb: 2 },
     flags: {},
     chests: [],
@@ -196,65 +244,76 @@ export function createHero(name = 'ゆうしゃ') {
     y: START.y,
     dir: START.dir,
   };
-  const s = statsOf(hero);
-  hero.hp = s.maxHp;
-  hero.mp = s.maxMp;
-  return hero;
 }
 
-/** セーブデータを読み込む。壊れていても遊べる形に直す。 */
-export function normalizeHero(raw) {
-  const base = createHero();
+function normalizeMember(raw, fallbackCls = 'hero') {
+  const cls = CLASSES[raw?.cls] ? raw.cls : fallbackCls;
+  const member = createMember(cls, undefined, Math.max(0, Math.floor(Number(raw?.exp) || 0)));
+  if (typeof raw?.name === 'string' && raw.name.trim()) member.name = raw.name.slice(0, 8);
+  member.bonusHp = Math.max(0, Math.floor(Number(raw?.bonusHp) || 0));
+  member.bonusStr = Math.max(0, Math.floor(Number(raw?.bonusStr) || 0));
+  for (const { slot, list } of GEAR) {
+    member[slot] = list.some((g) => g.id === raw?.[slot]) ? raw[slot] : 'none';
+  }
+  const s = statsOf(member);
+  member.hp = clamp(Math.floor(Number(raw?.hp) ?? s.maxHp), 0, s.maxHp);
+  member.mp = clamp(Math.floor(Number(raw?.mp) ?? s.maxMp), 0, s.maxMp);
+  return member;
+}
+
+/** セーブデータを読み込む。古い形式や壊れたデータでも遊べる形に直す。 */
+export function normalizeSave(raw) {
+  const base = createSave();
   if (!raw || typeof raw !== 'object') return base;
 
-  const hero = { ...base, ...raw };
-  hero.name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.slice(0, 8) : base.name;
-  hero.exp = Math.max(0, Math.floor(Number(raw.exp) || 0));
-  hero.gold = clamp(Math.floor(Number(raw.gold) || 0), 0, 999999);
-  hero.bonusHp = Math.max(0, Math.floor(Number(raw.bonusHp) || 0));
-  hero.bonusStr = Math.max(0, Math.floor(Number(raw.bonusStr) || 0));
-  hero.steps = Math.max(0, Math.floor(Number(raw.steps) || 0));
+  // v1 は「ゆうしゃ 1 人ぶん」がそのまま入っていた。パーティ 1 人として引き継ぐ。
+  const partyRaw = Array.isArray(raw.party) && raw.party.length ? raw.party : [raw];
 
-  for (const { slot, list } of GEAR) {
-    hero[slot] = list.some((g) => g.id === raw[slot]) ? raw[slot] : 'none';
-  }
+  const save = {
+    v: SAVE_VERSION,
+    party: partyRaw.slice(0, PARTY_LIMIT).map((m, i) => normalizeMember(m, i === 0 ? 'hero' : 'warrior')),
+    gold: clamp(Math.floor(Number(raw.gold) || 0), 0, 999999),
+    items: {},
+    flags: raw.flags && typeof raw.flags === 'object' ? { ...raw.flags } : {},
+    chests: Array.isArray(raw.chests) ? raw.chests.filter((id) => typeof id === 'string') : [],
+    steps: Math.max(0, Math.floor(Number(raw.steps) || 0)),
+    map: typeof raw.map === 'string' ? raw.map : START.map,
+    x: Math.floor(Number(raw.x) ?? START.x),
+    y: Math.floor(Number(raw.y) ?? START.y),
+    dir: ['up', 'down', 'left', 'right'].includes(raw.dir) ? raw.dir : START.dir,
+  };
 
-  hero.items = {};
   if (raw.items && typeof raw.items === 'object') {
     for (const [id, count] of Object.entries(raw.items)) {
       const n = Math.floor(Number(count) || 0);
-      if (itemById(id) && n > 0) hero.items[id] = Math.min(n, 99);
+      if (itemById(id) && n > 0) save.items[id] = Math.min(n, 99);
     }
   }
 
-  hero.flags = raw.flags && typeof raw.flags === 'object' ? { ...raw.flags } : {};
-  hero.chests = Array.isArray(raw.chests) ? raw.chests.filter((id) => typeof id === 'string') : [];
-
-  const s = statsOf(hero);
-  hero.hp = clamp(Math.floor(Number(raw.hp) ?? s.maxHp), 0, s.maxHp);
-  hero.mp = clamp(Math.floor(Number(raw.mp) ?? s.maxMp), 0, s.maxMp);
-  if (hero.hp <= 0) hero.hp = s.maxHp;   // 全滅したまま保存されていても詰まないように
-
-  hero.map = typeof raw.map === 'string' ? raw.map : START.map;
-  hero.x = Math.floor(Number(raw.x) ?? START.x);
-  hero.y = Math.floor(Number(raw.y) ?? START.y);
-  hero.dir = ['up', 'down', 'left', 'right'].includes(raw.dir) ? raw.dir : START.dir;
-  return hero;
+  // 全滅したまま保存されていても詰まないように、先頭だけは必ず立っている。
+  if (!alive(save.party).length) {
+    const leader = save.party[0];
+    leader.hp = statsOf(leader).maxHp;
+  }
+  return save;
 }
 
-/** レベル・装備・たねを合わせた最終的な能力。 */
-export function statsOf(hero) {
-  const level = levelOf(hero.exp);
+/** レベル・職業・装備・たねを合わせた最終的な能力。 */
+export function statsOf(member) {
+  const cls = classById(member.cls);
+  const level = levelOf(member.exp);
   const row = levelRow(level);
-  const weapon = gearById('weapon', hero.weapon);
-  const armor = gearById('armor', hero.armor);
-  const shield = gearById('shield', hero.shield);
-  const str = row.str + (hero.bonusStr || 0);
-  const agi = row.agi;
+  const weapon = gearById('weapon', member.weapon);
+  const armor = gearById('armor', member.armor);
+  const shield = gearById('shield', member.shield);
+  const str = Math.round(row.str * cls.str) + (member.bonusStr || 0);
+  const agi = Math.max(1, Math.round(row.agi * cls.agi));
+  const maxMp = cls.mp === 0 ? 0 : Math.max(row.mp > 0 ? cls.mpMin || 0 : 0, Math.round(row.mp * cls.mp));
   return {
+    cls,
     level,
-    maxHp: row.hp + (hero.bonusHp || 0),
-    maxMp: row.mp,
+    maxHp: Math.round(row.hp * cls.hp) + (member.bonusHp || 0),
+    maxMp,
     str,
     agi,
     atk: str + weapon.atk,
@@ -262,28 +321,78 @@ export function statsOf(hero) {
     weapon,
     armor,
     shield,
-    nextExp: expToNext(hero.exp),
+    nextExp: expToNext(member.exp),
   };
 }
 
+/** その仲間が覚えている呪文。 */
+export function spellsOf(member) {
+  const cls = classById(member.cls);
+  const level = levelOf(member.exp);
+  const ids = [];
+  for (const [at, list] of Object.entries(cls.spells)) {
+    if (Number(at) <= level) ids.push(...list);
+  }
+  return ids.map(spellById);
+}
+
+export const knowsSpell = (member, id) => spellsOf(member).some((s) => s.id === id);
+
 /** 経験値を足してレベルアップを判定する。上がった分の情報を返す。 */
-export function gainExp(hero, amount) {
-  const before = levelOf(hero.exp);
-  hero.exp += Math.max(0, Math.floor(amount));
-  const after = levelOf(hero.exp);
+export function gainExp(member, amount) {
+  const cls = classById(member.cls);
+  const before = levelOf(member.exp);
+  member.exp += Math.max(0, Math.floor(amount));
+  const after = levelOf(member.exp);
   const gained = [];
   for (let level = before + 1; level <= after; level++) {
-    const row = levelRow(level);
-    gained.push({ level, spells: row.spells.map(spellById) });
+    gained.push({ level, spells: (cls.spells[level] || []).map(spellById) });
   }
   if (gained.length) {
-    // ドラクエと同じで、レベルが上がると上がった分だけ HP / MP も回復する。
-    const s = statsOf(hero);
+    // ドラクエと同じで、レベルが上がると上がった分だけ HP / MP も増える。
     const beforeRow = levelRow(before);
-    hero.hp = Math.min(s.maxHp, hero.hp + (s.maxHp - (beforeRow.hp + (hero.bonusHp || 0))));
-    hero.mp = Math.min(s.maxMp, hero.mp + (s.maxMp - beforeRow.mp));
+    const beforeHp = Math.round(beforeRow.hp * cls.hp) + (member.bonusHp || 0);
+    const beforeMp = cls.mp === 0 ? 0 : Math.max(beforeRow.mp > 0 ? cls.mpMin || 0 : 0, Math.round(beforeRow.mp * cls.mp));
+    const s = statsOf(member);
+    if (member.hp > 0) member.hp = Math.min(s.maxHp, member.hp + (s.maxHp - beforeHp));
+    member.mp = Math.min(s.maxMp, member.mp + (s.maxMp - beforeMp));
   }
   return gained;
+}
+
+// ---------------------------------------------------------------- パーティ
+
+export const isDown = (member) => member.hp <= 0;
+
+export const alive = (party) => party.filter((m) => m.hp > 0);
+
+export const isWiped = (save) => alive(save.party).length === 0;
+
+export const leaderOf = (save) => save.party[0];
+
+/** 仲間を加える。level を渡すと そのレベル以上で加わる。 */
+export function joinParty(save, clsId, name, minLevel = 1) {
+  if (save.party.length >= PARTY_LIMIT) return { ok: false, text: 'これ以上 仲間は 連れていけない。' };
+  const leaderExp = leaderOf(save).exp;
+  const exp = Math.max(expForLevel(minLevel), Math.round(leaderExp * 0.85));
+  const member = createMember(clsId, name, exp);
+  save.party.push(member);
+  return { ok: true, member, text: `${member.name}が 仲間に くわわった！` };
+}
+
+/** 生き返らせる。もともと生きていれば false。 */
+export function revive(member, ratio = 0.5) {
+  if (!isDown(member)) return false;
+  member.hp = Math.max(1, Math.round(statsOf(member).maxHp * ratio));
+  return true;
+}
+
+export function healAll(save) {
+  for (const member of save.party) {
+    const s = statsOf(member);
+    member.hp = s.maxHp;
+    member.mp = s.maxMp;
+  }
 }
 
 // ---------------------------------------------------------------- 持ち物
@@ -291,69 +400,75 @@ export function gainExp(hero, amount) {
 export const ITEM_LIMIT = 12;
 
 /** 持っている道具を [{item, count}] で返す。 */
-export function itemList(hero) {
-  return ITEMS.filter((i) => (hero.items[i.id] || 0) > 0).map((item) => ({ item, count: hero.items[item.id] }));
+export function itemList(save) {
+  return ITEMS.filter((i) => (save.items[i.id] || 0) > 0).map((item) => ({ item, count: save.items[item.id] }));
 }
 
-export const itemCount = (hero, id) => hero.items[id] || 0;
+export const itemCount = (save, id) => save.items[id] || 0;
 
-export const hasItem = (hero, id) => itemCount(hero, id) > 0;
+export const hasItem = (save, id) => itemCount(save, id) > 0;
 
 /** 持ち物の種類が上限を超えていたら false（同じ道具は重ねられる）。 */
-export function addItem(hero, id, count = 1) {
+export function addItem(save, id, count = 1) {
   if (!itemById(id)) return false;
-  if (!hero.items[id] && itemList(hero).length >= ITEM_LIMIT) return false;
-  hero.items[id] = Math.min(99, (hero.items[id] || 0) + count);
+  if (!save.items[id] && itemList(save).length >= ITEM_LIMIT) return false;
+  save.items[id] = Math.min(99, (save.items[id] || 0) + count);
   return true;
 }
 
-export function removeItem(hero, id, count = 1) {
-  if (!hasItem(hero, id)) return false;
-  hero.items[id] -= count;
-  if (hero.items[id] <= 0) delete hero.items[id];
+export function removeItem(save, id, count = 1) {
+  if (!hasItem(save, id)) return false;
+  save.items[id] -= count;
+  if (save.items[id] <= 0) delete save.items[id];
   return true;
 }
 
 /**
- * 道具を使う。where は 'field' か 'battle'。
- * 戻り値の consumed が true なら道具が減っている。
+ * 道具を使う。target は使われる仲間（省略すると先頭）。
+ * where は 'field' か 'battle'。consumed が true なら道具が減っている。
  */
-export function useItem(hero, id, where = 'field', rng = Math.random) {
+export function useItem(save, id, target = leaderOf(save), where = 'field', rng = Math.random) {
   const item = itemById(id);
-  if (!item || !hasItem(hero, id)) return { ok: false, text: 'その道具は持っていない。' };
+  if (!item || !hasItem(save, id)) return { ok: false, text: 'その道具は持っていない。' };
   if (where === 'battle' && !item.battle) return { ok: false, text: `${item.name}は 戦いの中では使えない！` };
   if (where === 'field' && !item.field) return { ok: false, text: `${item.name}は いま使ってもなにも起きない。` };
+  if (item.ally && item.kind !== 'revive' && isDown(target)) return { ok: false, text: `${target.name}は 死んでいる。` };
 
-  const s = statsOf(hero);
+  const s = statsOf(target);
   switch (item.kind) {
     case 'heal': {
-      if (hero.hp >= s.maxHp) return { ok: false, text: 'HP は満タンだ。' };
-      const heal = Math.min(s.maxHp - hero.hp, randInt(item.power - 4, item.power + 4, rng));
-      hero.hp += heal;
-      removeItem(hero, id);
-      return { ok: true, consumed: true, heal, fx: 'heal', text: `${hero.name}は ${item.name}を つかった！\nHP が ${heal} 回復した。` };
+      if (target.hp >= s.maxHp) return { ok: false, text: `${target.name}の HP は 満タンだ。` };
+      const heal = Math.min(s.maxHp - target.hp, randInt(item.power - 4, item.power + 4, rng));
+      target.hp += heal;
+      removeItem(save, id);
+      return { ok: true, consumed: true, heal, fx: 'heal', text: `${item.name}を つかった！\n${target.name}の HP が ${heal} 回復した。` };
     }
     case 'mp': {
-      if (s.maxMp === 0) return { ok: false, text: 'まだ呪文をおぼえていない。' };
-      if (hero.mp >= s.maxMp) return { ok: false, text: 'MP は満タンだ。' };
-      const heal = Math.min(s.maxMp - hero.mp, item.power);
-      hero.mp += heal;
-      removeItem(hero, id);
-      return { ok: true, consumed: true, fx: 'heal', text: `${hero.name}は ${item.name}を つかった！\nMP が ${heal} 回復した。` };
+      if (s.maxMp === 0) return { ok: false, text: `${target.name}は 呪文を つかえない。` };
+      if (target.mp >= s.maxMp) return { ok: false, text: `${target.name}の MP は 満タンだ。` };
+      const heal = Math.min(s.maxMp - target.mp, item.power);
+      target.mp += heal;
+      removeItem(save, id);
+      return { ok: true, consumed: true, fx: 'heal', text: `${item.name}を つかった！\n${target.name}の MP が ${heal} 回復した。` };
+    }
+    case 'revive': {
+      if (!isDown(target)) return { ok: false, text: `${target.name}は 元気だ。` };
+      revive(target, 1);
+      removeItem(save, id);
+      return { ok: true, consumed: true, fx: 'heal', text: `${item.name}を つかった！\n${target.name}は 生き返った！` };
     }
     case 'warp':
-      removeItem(hero, id);
+      removeItem(save, id);
       return { ok: true, consumed: true, warp: true, fx: 'warp', text: `${item.name}を つかった！\n空へ舞い上がった！` };
     case 'seedStr':
-      hero.bonusStr += item.power;
-      removeItem(hero, id);
-      return { ok: true, consumed: true, fx: 'heal', text: `${hero.name}の ちからが ${item.power} 上がった！` };
-    case 'seedHp': {
-      hero.bonusHp += item.power;
-      hero.hp += item.power;
-      removeItem(hero, id);
-      return { ok: true, consumed: true, fx: 'heal', text: `${hero.name}の 最大 HP が ${item.power} 上がった！` };
-    }
+      target.bonusStr += item.power;
+      removeItem(save, id);
+      return { ok: true, consumed: true, fx: 'heal', text: `${target.name}の ちからが ${item.power} 上がった！` };
+    case 'seedHp':
+      target.bonusHp += item.power;
+      target.hp += item.power;
+      removeItem(save, id);
+      return { ok: true, consumed: true, fx: 'heal', text: `${target.name}の 最大 HP が ${item.power} 上がった！` };
     default:
       return { ok: false, text: `${item.name}は だいじな品だ。` };
   }
@@ -361,127 +476,136 @@ export function useItem(hero, id, where = 'field', rng = Math.random) {
 
 // ---------------------------------------------------------------- 店・宿
 
-/** 宿代はレベルが上がるほど高い。 */
-export const innCost = (hero) => 4 + levelOf(hero.exp) * 3;
+/** 宿代は 人数とレベルで決まる。 */
+export const innCost = (save) => save.party.reduce((sum, m) => sum + 4 + levelOf(m.exp) * 3, 0);
 
-/** 買い物。戻り値の ok が false なら text に理由が入る。 */
-export function buy(hero, id) {
+/** 買い物。装備は who に渡す（省略すると先頭）。 */
+export function buy(save, id, who = leaderOf(save)) {
   const gear = allGearById(id);
   const item = itemById(id);
   const goods = gear || item;
   if (!goods) return { ok: false, text: 'それは売っていない。' };
-  if (hero.gold < goods.price) return { ok: false, text: 'お金が足りないようだ。' };
+  if (save.gold < goods.price) return { ok: false, text: 'お金が足りないようだ。' };
 
   if (gear) {
-    const old = gearById(gear.slot, hero[gear.slot]);
-    if (old.id === gear.id) return { ok: false, text: 'それは もう装備している。' };
-    hero.gold -= gear.price;
-    hero[gear.slot] = gear.id;
+    const old = gearById(gear.slot, who[gear.slot]);
+    if (old.id === gear.id) return { ok: false, text: `${who.name}は もう それを 装備している。` };
+    save.gold -= gear.price;
+    who[gear.slot] = gear.id;
     const back = old.id === 'none' ? '' : `\n${old.name}は 下取りに出した。`;
-    return { ok: true, text: `${gear.name}を 手に入れた！${back}` };
+    return { ok: true, text: `${who.name}は ${gear.name}を 手に入れた！${back}` };
   }
 
-  if (!addItem(hero, id)) return { ok: false, text: 'これ以上 道具を持てない。' };
-  hero.gold -= item.price;
+  if (!addItem(save, id)) return { ok: false, text: 'これ以上 道具を持てない。' };
+  save.gold -= item.price;
   return { ok: true, text: `${item.name}を 手に入れた！` };
 }
 
 /** 道具を売る。装備は下取り扱いなので売れない。 */
-export function sell(hero, id) {
+export function sell(save, id) {
   const item = itemById(id);
-  if (!item || !hasItem(hero, id)) return { ok: false, text: 'それは持っていない。' };
+  if (!item || !hasItem(save, id)) return { ok: false, text: 'それは持っていない。' };
   const price = sellPrice(id);
   if (price <= 0) return { ok: false, text: 'それは 買い取れないよ。' };
-  removeItem(hero, id);
-  hero.gold = Math.min(999999, hero.gold + price);
+  removeItem(save, id);
+  save.gold = Math.min(999999, save.gold + price);
   return { ok: true, price, text: `${item.name}を ${price} ゴールドで 売った。` };
+}
+
+/** 宿屋に泊まる。死んだ仲間も 目を覚ます。 */
+export function stayInn(save) {
+  const cost = innCost(save);
+  if (save.gold < cost) return { ok: false, cost, text: 'お金が 足りないようだね。' };
+  save.gold -= cost;
+  healAll(save);
+  return { ok: true, cost, text: 'ぐっすり おやすみ……\n\nおはようございます！\nみんな 元気になった。' };
 }
 
 // ---------------------------------------------------------------- モンスター
 
 /**
  * actions は行動の抽選表。kind は attack / spell / breath / heal / sleep。
- * resist は炎・爆発系の呪文が効きにくくなる割合（0 で等倍）。
+ * acts は 1 ターンに動く回数、resist は炎・爆発系が効きにくくなる割合。
  */
 export const MONSTERS = [
   {
     id: 'slime', name: 'スライム', emoji: '🟢', color: '#4dd07a',
-    hp: 8, atk: 6, def: 3, agi: 4, exp: 3, gold: 6, resist: 0,
+    hp: 13, atk: 6, def: 3, agi: 4, exp: 3, gold: 6, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'rat', name: 'おおねずみ', emoji: '🐀', color: '#b39d86',
-    hp: 14, atk: 9, def: 5, agi: 10, exp: 6, gold: 9, resist: 0,
+    hp: 22, atk: 9, def: 5, agi: 10, exp: 6, gold: 9, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'bee', name: 'キラービー', emoji: '🐝', color: '#ffd43b',
-    hp: 17, atk: 12, def: 7, agi: 18, exp: 10, gold: 13, resist: 0,
+    hp: 30, atk: 13, def: 7, agi: 18, exp: 10, gold: 13, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'goblin', name: 'ゴブリン', emoji: '👺', color: '#e07a5f',
-    hp: 26, atk: 17, def: 10, agi: 9, exp: 15, gold: 18, resist: 0,
+    hp: 52, atk: 19, def: 10, agi: 9, exp: 15, gold: 18, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'wolf', name: 'あばれオオカミ', emoji: '🐺', color: '#9aa5b1',
-    hp: 38, atk: 30, def: 16, agi: 16, exp: 26, gold: 28, resist: 0,
+    hp: 82, atk: 33, def: 16, agi: 16, exp: 26, gold: 28, resist: 0, acts: 2,
     actions: [{ kind: 'attack', w: 88 }, { kind: 'sleep', w: 12 }],
   },
   {
     id: 'mage', name: 'まどうし', emoji: '🧙', color: '#b197fc',
-    hp: 30, atk: 20, def: 14, agi: 14, exp: 32, gold: 42, resist: 0.3,
-    actions: [{ kind: 'attack', w: 45 }, { kind: 'spell', id: 'gira', w: 40 }, { kind: 'heal', power: 25, w: 15 }],
+    hp: 66, atk: 22, def: 14, agi: 14, exp: 32, gold: 42, resist: 0.3,
+    actions: [{ kind: 'attack', w: 45 }, { kind: 'spell', id: 'gira', w: 40 }, { kind: 'heal', power: 40, w: 15 }],
   },
   {
     id: 'armor', name: 'さまようよろい', emoji: '🛡️', color: '#adb5bd',
-    hp: 50, atk: 34, def: 28, agi: 10, exp: 40, gold: 48, resist: 0.1,
+    hp: 110, atk: 38, def: 28, agi: 10, exp: 40, gold: 48, resist: 0.1,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'skeleton', name: 'がいこつ剣士', emoji: '💀', color: '#dee2e6',
-    hp: 62, atk: 44, def: 30, agi: 16, exp: 65, gold: 75, resist: 0.1,
+    hp: 145, atk: 48, def: 30, agi: 16, exp: 65, gold: 75, resist: 0.1, acts: 2,
     actions: [{ kind: 'attack', w: 85 }, { kind: 'sleep', w: 15 }],
   },
   {
     id: 'lizard', name: 'どくトカゲ', emoji: '🦎', color: '#82c91e',
-    hp: 72, atk: 50, def: 34, agi: 14, exp: 80, gold: 90, resist: 0.2,
+    hp: 165, atk: 54, def: 34, agi: 14, exp: 80, gold: 90, resist: 0.2, acts: 2,
     actions: [{ kind: 'attack', w: 75 }, { kind: 'breath', power: [24, 34], w: 25 }],
   },
   {
     id: 'golem', name: 'ゴーレム', emoji: '🗿', color: '#8d99ae',
-    hp: 120, atk: 62, def: 50, agi: 6, exp: 135, gold: 165, resist: 0.15,
+    hp: 280, atk: 70, def: 50, agi: 6, exp: 135, gold: 165, resist: 0.15,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'witch', name: 'まじょ', emoji: '🧟', color: '#da77f2',
-    hp: 85, atk: 44, def: 36, agi: 22, exp: 145, gold: 175, resist: 0.4,
+    hp: 195, atk: 48, def: 36, agi: 22, exp: 145, gold: 175, resist: 0.4, acts: 2,
     actions: [
       { kind: 'attack', w: 35 },
       { kind: 'spell', id: 'begirama', w: 35 },
-      { kind: 'heal', power: 55, w: 15 },
+      { kind: 'heal', power: 90, w: 15 },
       { kind: 'sleep', w: 15 },
     ],
   },
   {
     id: 'knight', name: 'あくまのきし', emoji: '😈', color: '#f06595',
-    hp: 140, atk: 70, def: 54, agi: 24, exp: 210, gold: 240, resist: 0.2,
+    hp: 320, atk: 74, def: 54, agi: 24, exp: 210, gold: 240, resist: 0.2, acts: 2,
     actions: [{ kind: 'attack', w: 80 }, { kind: 'breath', power: [30, 42], w: 20 }],
   },
   {
     id: 'dragon', name: 'ドラゴン', emoji: '🐉', color: '#69db7c',
-    hp: 180, atk: 78, def: 60, agi: 18, exp: 330, gold: 390, resist: 0.5,
+    hp: 420, atk: 82, def: 60, agi: 18, exp: 330, gold: 390, resist: 0.5, acts: 2,
     actions: [{ kind: 'attack', w: 60 }, { kind: 'breath', power: [42, 58], w: 40 }],
   },
   {
     id: 'darklord', name: 'まおう ダークロード', emoji: '👹', color: '#ff6b6b',
-    hp: 360, atk: 92, def: 66, agi: 26, exp: 0, gold: 0, resist: 0.35, boss: true,
+    hp: 1600, atk: 114, def: 66, agi: 26, exp: 0, gold: 0, resist: 0.35, boss: true, acts: 3,
     actions: [
       { kind: 'attack', w: 40 },
       { kind: 'breath', power: [52, 70], w: 25 },
       { kind: 'spell', id: 'begirama', w: 15 },
-      { kind: 'heal', power: 70, w: 10 },
+      { kind: 'heal', power: 90, w: 10 },
       { kind: 'sleep', w: 10 },
     ],
   },
@@ -512,31 +636,37 @@ export function spellDamage(range, resist = 0, rng = Math.random) {
 // ---------------------------------------------------------------- 戦闘
 
 /**
- * 1 対 1 の戦闘。command() を呼ぶと 1 ターン分を解決して、
+ * パーティ 対 魔物 1 匹の戦闘。
+ * resolve(actions) に「生きている仲間ぶんの行動」を渡すと 1 ターン分を解決して、
  * 画面に流すメッセージ（[{text, fx}]）を返す。
+ *
+ * actions は仲間と同じ並びの配列で、中身は
+ *   { type:'attack' } / { type:'spell', id, target } / { type:'item', id, target } / { type:'flee' }
  */
 export class Battle {
-  constructor(hero, monsterId, rng = Math.random) {
+  constructor(save, monsterId, rng = Math.random) {
     const base = monsterById(monsterId);
     if (!base) throw new Error(`未知のモンスター: ${monsterId}`);
-    this.hero = hero;
+    this.save = save;
+    this.party = save.party;
     this.rng = rng;
-    this.monster = { ...base, maxHp: base.hp };
+    this.monster = { ...base, maxHp: base.hp, acts: base.acts || 1 };
     this.result = null;        // null / 'win' / 'lose' / 'escaped'
     this.reward = { exp: 0, gold: 0 };
     this.turn = 0;
-    this.sleep = 0;            // 主人公が眠っている残りターン
-    this.buff = false;         // バイキルト中か
+    this.sleep = new Map();    // 眠っている仲間 → 残りターン
+    this.buff = new Set();     // バイキルト中の仲間
+    this.monsterSleep = 0;
   }
 
   get over() { return this.result !== null; }
 
-  get stats() { return statsOf(this.hero); }
+  /** 戦える（生きていて 眠っていない）仲間。 */
+  get actors() { return alive(this.party); }
 
-  /** 主人公の攻撃力（バイキルト込み）。 */
-  get heroAtk() {
-    const atk = this.stats.atk;
-    return this.buff ? Math.round(atk * 1.6) : atk;
+  atkOf(member) {
+    const atk = statsOf(member).atk;
+    return this.buff.has(member) ? Math.round(atk * 1.6) : atk;
   }
 
   /** 戦闘開始時のメッセージ。 */
@@ -544,104 +674,140 @@ export class Battle {
     return [{ text: `${this.monster.name}が あらわれた！`, fx: 'appear' }];
   }
 
-  /**
-   * command({type, id}) で 1 ターン進める。
-   * type は 'attack' / 'spell' / 'item' / 'flee'。
-   */
-  command(action) {
+  resolve(actions) {
     if (this.over) return [];
     this.turn++;
     const lines = [];
-    const heroFirst = this.rng() * (this.stats.agi + 4) >= this.rng() * (this.monster.agi + 4);
 
-    const heroTurn = () => {
-      if (this.over) return;
-      if (this.sleep > 0) {
-        this.sleep--;
-        lines.push({ text: `${this.hero.name}は ねむっている……`, fx: 'sleep' });
-        if (this.sleep === 0) lines.push({ text: `${this.hero.name}は 目をさました！` });
-        return;
+    // 「にげる」は パーティ全体の行動。ひとりでも選んでいたら まず逃げてみる。
+    const fleeing = this.party.some((m, i) => !isDown(m) && actions[i]?.type === 'flee');
+    if (fleeing) {
+      lines.push(...this.#tryFlee());
+      if (this.over) return lines;
+    }
+
+    // すばやさ順。魔物は acts の回数だけ 順番に割りこむ。
+    const order = [];
+    for (const member of this.party) {
+      if (isDown(member)) continue;
+      const i = this.party.indexOf(member);
+      if (fleeing && actions[i]?.type === 'flee') continue;     // 逃げそこねた人は動けない
+      order.push({ member, action: actions[i], speed: statsOf(member).agi * (0.75 + this.rng() * 0.5) });
+    }
+    for (let i = 0; i < this.monster.acts; i++) {
+      order.push({ monster: true, speed: this.monster.agi * (0.75 + this.rng() * 0.5) });
+    }
+    order.sort((a, b) => b.speed - a.speed);
+
+    for (const slot of order) {
+      if (this.over) break;
+      if (slot.monster) {
+        lines.push(...this.#monsterAction());
+      } else if (!isDown(slot.member)) {
+        lines.push(...this.#memberAction(slot.member, slot.action));
       }
-      lines.push(...this.#heroAction(action));
-    };
-
-    const monsterTurn = () => {
-      if (this.over) return;
-      lines.push(...this.#monsterAction());
-    };
-
-    if (heroFirst) { heroTurn(); monsterTurn(); } else { monsterTurn(); heroTurn(); }
+    }
     return lines;
   }
 
-  #heroAction(action) {
-    const lines = [];
-    const hero = this.hero;
-
-    if (action.type === 'flee') {
-      if (this.monster.boss) {
-        lines.push({ text: 'まわりを 結界にはばまれた！\n逃げられない！', fx: 'fail' });
-        return lines;
-      }
-      const chance = clamp(0.45 + (this.stats.agi - this.monster.agi) / 90, 0.15, 0.92);
-      lines.push({ text: `${hero.name}は 逃げだした！`, fx: 'flee' });
-      if (this.rng() < chance) {
-        this.result = 'escaped';
-      } else {
-        lines.push({ text: 'しかし まわりこまれてしまった！', fx: 'fail' });
-      }
+  #tryFlee() {
+    const lines = [{ text: `${leaderOf(this.save).name}たちは 逃げだした！`, fx: 'flee' }];
+    if (this.monster.boss) {
+      lines.push({ text: 'しかし まわりを 結界に はばまれた！', fx: 'fail' });
       return lines;
     }
+    const fastest = Math.max(...alive(this.party).map((m) => statsOf(m).agi));
+    const chance = clamp(0.45 + (fastest - this.monster.agi) / 90, 0.15, 0.92);
+    if (this.rng() < chance) this.result = 'escaped';
+    else lines.push({ text: 'しかし まわりこまれてしまった！', fx: 'fail' });
+    return lines;
+  }
+
+  #memberAction(member, action) {
+    const lines = [];
+
+    if (this.sleep.get(member) > 0) {
+      this.sleep.set(member, this.sleep.get(member) - 1);
+      lines.push({ text: `${member.name}は ねむっている……`, fx: 'sleep' });
+      if (this.sleep.get(member) === 0) lines.push({ text: `${member.name}は 目をさました！` });
+      return lines;
+    }
+    if (!action || action.type === 'flee') return lines;
 
     if (action.type === 'item') {
-      const res = useItem(hero, action.id, 'battle', this.rng);
+      const target = action.target || member;
+      const res = useItem(this.save, action.id, target, 'battle', this.rng);
+      lines.push({ text: `${member.name}は ${itemById(action.id)?.name || '道具'}を つかった！`, fx: 'cast' });
       lines.push({ text: res.text, fx: res.fx || 'fail' });
       return lines;
     }
 
     if (action.type === 'spell') {
       const spell = spellById(action.id);
-      if (!spell || !knowsSpell(hero, action.id)) return [{ text: 'そんな呪文は 知らない。', fx: 'fail' }];
-      if (hero.mp < spell.mp) return [{ text: 'MP が 足りない！', fx: 'fail' }];
-      hero.mp -= spell.mp;
-      lines.push({ text: `${hero.name}は ${spell.name}を となえた！`, fx: 'cast' });
-
-      if (spell.kind === 'attack') {
-        const dmg = spellDamage(spell.power, this.monster.resist, this.rng);
-        lines.push(...this.#hurtMonster(dmg));
-      } else if (spell.kind === 'heal') {
-        const s = this.stats;
-        const heal = spell.power === 'full' ? s.maxHp - hero.hp : Math.min(s.maxHp - hero.hp, randInt(spell.power[0], spell.power[1], this.rng));
-        hero.hp += heal;
-        lines.push({ text: heal > 0 ? `${hero.name}の HP が ${heal} 回復した。` : 'しかし HP は満タンだ。', fx: 'heal' });
-      } else if (spell.kind === 'buff') {
-        this.buff = true;
-        lines.push({ text: `${hero.name}の 攻撃力が 上がった！`, fx: 'buff' });
-      } else {
-        lines.push({ text: 'しかし 戦いの中では 効果がなかった。', fx: 'fail' });
-      }
+      if (!spell || !knowsSpell(member, action.id)) return [{ text: `${member.name}は その呪文を 知らない。`, fx: 'fail' }];
+      if (member.mp < spell.mp) return [{ text: `${member.name}の MP が 足りない！`, fx: 'fail' }];
+      member.mp -= spell.mp;
+      lines.push({ text: `${member.name}は ${spell.name}を となえた！`, fx: 'cast' });
+      lines.push(...this.#castSpell(member, spell, action.target || member));
       return lines;
     }
 
     // たたかう
     if (this.rng() < CRITICAL_RATE) {
-      lines.push({ text: `${hero.name}の こうげき！\nかいしんの いちげき！！`, fx: 'critical' });
-      lines.push(...this.#hurtMonster(criticalDamage(this.heroAtk, this.rng)));
-      return lines;
+      lines.push({ text: `${member.name}の こうげき！\nかいしんの いちげき！！`, fx: 'critical' });
+      return [...lines, ...this.#hurtMonster(criticalDamage(this.atkOf(member), this.rng))];
     }
-    lines.push({ text: `${hero.name}の こうげき！`, fx: 'swing' });
-    const dmg = attackDamage(this.heroAtk, this.monster.def, this.rng);
+    lines.push({ text: `${member.name}の こうげき！`, fx: 'swing' });
+    const dmg = attackDamage(this.atkOf(member), this.monster.def, this.rng);
     if (dmg <= 0) {
       lines.push({ text: 'ミス！ ダメージを あたえられない！', fx: 'fail' });
       return lines;
     }
-    lines.push(...this.#hurtMonster(dmg));
-    return lines;
+    return [...lines, ...this.#hurtMonster(dmg)];
+  }
+
+  #castSpell(member, spell, target) {
+    const lines = [];
+    switch (spell.kind) {
+      case 'attack':
+        return this.#hurtMonster(spellDamage(spell.power, this.monster.resist, this.rng));
+      case 'heal': {
+        if (isDown(target)) return [{ text: `しかし ${target.name}は 死んでいる。`, fx: 'fail' }];
+        const s = statsOf(target);
+        const heal = spell.power === 'full'
+          ? s.maxHp - target.hp
+          : Math.min(s.maxHp - target.hp, randInt(spell.power[0], spell.power[1], this.rng));
+        target.hp += heal;
+        lines.push({ text: heal > 0 ? `${target.name}の HP が ${heal} 回復した。` : `しかし ${target.name}の HP は 満タンだ。`, fx: 'heal' });
+        return lines;
+      }
+      case 'revive':
+        if (!isDown(target)) return [{ text: `しかし ${target.name}は 元気だ。`, fx: 'fail' }];
+        if (this.rng() < 0.5) {
+          revive(target, 0.5);
+          lines.push({ text: `${target.name}は 生き返った！`, fx: 'heal' });
+        } else {
+          lines.push({ text: `しかし ${target.name}は 生き返らなかった……`, fx: 'fail' });
+        }
+        return lines;
+      case 'buff':
+        this.buff.add(target);
+        return [{ text: `${target.name}の 攻撃力が 上がった！`, fx: 'buff' }];
+      case 'sleep':
+        if (this.monsterSleep > 0 || this.rng() < (this.monster.boss ? 0.85 : 0.35)) {
+          return [{ text: 'しかし 効かなかった！', fx: 'fail' }];
+        }
+        this.monsterSleep = randInt(2, 4, this.rng);
+        return [{ text: `${this.monster.name}は 眠ってしまった！`, fx: 'sleep' }];
+      default:
+        return [{ text: 'しかし 戦いの中では 効果がなかった。', fx: 'fail' }];
+    }
   }
 
   #hurtMonster(dmg) {
     const lines = [];
     this.monster.hp -= dmg;
+    if (this.monsterSleep > 0 && this.rng() < 0.25) this.monsterSleep = 0;   // 痛みで目をさますことがある
     lines.push({ text: `${this.monster.name}に ${dmg} のダメージ！`, fx: 'hit-monster', damage: dmg });
     if (this.monster.hp <= 0) {
       this.monster.hp = 0;
@@ -652,27 +818,41 @@ export class Battle {
     return lines;
   }
 
+  /** 魔物が ねらう相手。生きている仲間からランダムに選ぶ。 */
+  #pickTarget() {
+    const living = alive(this.party);
+    return living[Math.floor(this.rng() * living.length)] || null;
+  }
+
   #monsterAction() {
-    const lines = [];
     const monster = this.monster;
-    const hero = this.hero;
+    const lines = [];
+
+    if (this.monsterSleep > 0) {
+      this.monsterSleep--;
+      lines.push({ text: `${monster.name}は ねむっている。`, fx: 'sleep' });
+      if (this.monsterSleep === 0) lines.push({ text: `${monster.name}は 目をさました！` });
+      return lines;
+    }
+
+    const target = this.#pickTarget();
+    if (!target) return lines;
+
     const pool = monster.actions.filter((a) => !(a.kind === 'heal' && monster.hp > monster.maxHp * 0.4));
     const act = weightedPick(pool.length ? pool : monster.actions, (a) => a.w, this.rng);
 
     if (act.kind === 'heal') {
-      const heal = Math.min(monster.maxHp - monster.hp, act.power);
-      monster.hp += heal;
-      lines.push({ text: `${monster.name}は ホイミを となえた！\n${monster.name}の HP が 回復した。`, fx: 'heal-monster' });
-      return lines;
+      monster.hp = Math.min(monster.maxHp, monster.hp + act.power);
+      return [{ text: `${monster.name}は ホイミを となえた！\n${monster.name}の HP が 回復した。`, fx: 'heal-monster' }];
     }
 
     if (act.kind === 'sleep') {
       lines.push({ text: `${monster.name}は ラリホーを となえた！`, fx: 'cast' });
-      if (this.sleep > 0 || this.rng() < 0.35) {
+      if (this.sleep.get(target) > 0 || this.rng() < 0.35) {
         lines.push({ text: 'しかし 効かなかった！', fx: 'fail' });
       } else {
-        this.sleep = randInt(2, 4, this.rng);
-        lines.push({ text: `${hero.name}は 眠ってしまった！`, fx: 'sleep' });
+        this.sleep.set(target, randInt(2, 4, this.rng));
+        lines.push({ text: `${target.name}は 眠ってしまった！`, fx: 'sleep' });
       }
       return lines;
     }
@@ -680,67 +860,68 @@ export class Battle {
     if (act.kind === 'spell') {
       const spell = spellById(act.id);
       lines.push({ text: `${monster.name}は ${spell.name}を となえた！`, fx: 'cast' });
-      return [...lines, ...this.#hurtHero(spellDamage(spell.power, 0, this.rng), true)];
+      return [...lines, ...this.#hurtMember(target, spellDamage(spell.power, 0, this.rng), true)];
     }
 
     if (act.kind === 'breath') {
       lines.push({ text: `${monster.name}は 炎を はきだした！`, fx: 'cast' });
-      return [...lines, ...this.#hurtHero(spellDamage(act.power, 0, this.rng), true)];
+      return [...lines, ...this.#hurtMember(target, spellDamage(act.power, 0, this.rng), true)];
     }
 
     lines.push({ text: `${monster.name}の こうげき！`, fx: 'swing' });
-    const dmg = attackDamage(monster.atk, this.stats.def, this.rng);
+    const dmg = attackDamage(monster.atk, statsOf(target).def, this.rng);
     if (dmg <= 0) {
-      lines.push({ text: `${hero.name}は うまく身をかわした！`, fx: 'fail' });
+      lines.push({ text: `${target.name}は うまく身をかわした！`, fx: 'fail' });
       return lines;
     }
-    return [...lines, ...this.#hurtHero(dmg)];
+    return [...lines, ...this.#hurtMember(target, dmg)];
   }
 
-  #hurtHero(dmg, magic = false) {
+  #hurtMember(target, dmg, magic = false) {
     const lines = [];
-    this.hero.hp = Math.max(0, this.hero.hp - dmg);
-    lines.push({ text: `${this.hero.name}は ${dmg} のダメージを うけた！`, fx: magic ? 'hit-hero-magic' : 'hit-hero', damage: dmg });
-    if (this.hero.hp <= 0) {
-      this.result = 'lose';
-      lines.push({ text: `${this.hero.name}は 力つきてしまった……`, fx: 'dead' });
-    } else if (this.sleep > 0) {
-      this.sleep = 0;
-      lines.push({ text: `${this.hero.name}は 目をさました！` });
+    target.hp = Math.max(0, target.hp - dmg);
+    lines.push({
+      text: `${target.name}は ${dmg} のダメージを うけた！`,
+      fx: magic ? 'hit-hero-magic' : 'hit-hero',
+      damage: dmg,
+      target: this.party.indexOf(target),
+    });
+    if (target.hp <= 0) {
+      this.sleep.delete(target);
+      this.buff.delete(target);
+      lines.push({ text: `${target.name}は 死んでしまった！`, fx: 'dead' });
+      if (!alive(this.party).length) {
+        this.result = 'lose';
+        lines.push({ text: 'パーティは 全滅した……', fx: 'wipe' });
+      }
+    } else if (this.sleep.get(target) > 0) {
+      this.sleep.delete(target);
+      lines.push({ text: `${target.name}は 目をさました！` });
     }
     return lines;
   }
 }
 
-/** 勝ったあとの経験値と金貨の受け取り。 */
-export function claimReward(hero, battle) {
+/** 勝ったあとの経験値と金貨の受け取り。生きている仲間だけが経験を積む。 */
+export function claimReward(save, battle) {
   const { exp, gold } = battle.reward;
-  hero.gold = Math.min(999999, hero.gold + gold);
-  const levels = gainExp(hero, exp);
+  save.gold = Math.min(999999, save.gold + gold);
+  const levels = [];
+  for (const member of save.party) {
+    if (isDown(member)) continue;
+    for (const up of gainExp(member, exp)) levels.push({ member, ...up });
+  }
   return { exp, gold, levels };
 }
 
 /** 全滅したときの処理。ドラクエと同じで、所持金が半分になって村に戻る。 */
-export function onDefeat(hero) {
-  const lost = Math.floor(hero.gold / 2);
-  hero.gold -= lost;
-  const s = statsOf(hero);
-  hero.hp = s.maxHp;
-  hero.mp = s.maxMp;
-  hero.map = START.map;
-  hero.x = START.x;
-  hero.y = START.y;
-  hero.dir = 'down';
+export function onDefeat(save) {
+  const lost = Math.floor(save.gold / 2);
+  save.gold -= lost;
+  healAll(save);
+  save.map = START.map;
+  save.x = START.x;
+  save.y = START.y;
+  save.dir = 'down';
   return { lost };
-}
-
-/** 宿屋に泊まる。 */
-export function stayInn(hero) {
-  const cost = innCost(hero);
-  if (hero.gold < cost) return { ok: false, cost, text: 'お金が 足りないようだね。' };
-  hero.gold -= cost;
-  const s = statsOf(hero);
-  hero.hp = s.maxHp;
-  hero.mp = s.maxMp;
-  return { ok: true, cost, text: 'ぐっすり おやすみ……\n\nおはようございます！\nHP と MP が 全回復した。' };
 }

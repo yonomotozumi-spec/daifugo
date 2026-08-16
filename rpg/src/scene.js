@@ -59,19 +59,20 @@ export class Scene {
   // -------------------------------------------------------------- マップ
 
   /**
-   * view = { map, hero:{x,y,dir,ox,oy,frame}, npcs, opened, flash }
-   * ox / oy は移動中のずれ（-1〜1 マス）。
+   * view = { map, party:[{x,y,dir,frame,look,down}], npcs, opened, flash }
+   * party の座標は小数（マス単位）で、先頭が主人公。
    */
   drawField(view, dt = 16) {
     this.time += dt;
     const { ctx, tile } = this;
-    const { map, hero } = view;
+    const { map } = view;
+    const hero = view.party[0];
     const cols = mapWidth(map);
     const rows = mapHeight(map);
 
     // カメラは主人公を中央に。マップが画面より小さいときは中央ぞろえ。
-    const heroPx = (hero.x + hero.ox) * tile;
-    const heroPy = (hero.y + hero.oy) * tile;
+    const heroPx = hero.x * tile;
+    const heroPy = hero.y * tile;
     // 暗い洞窟では 端に寄せると明かりが画面外に出てしまうので、いつも主人公を中央に置く。
     const free = (p, size, total) => p + tile / 2 - size / 2;
     const fit = (p, size, total) => (total <= size ? (total - size) / 2 : clamp(free(p, size, total), 0, total - size));
@@ -103,17 +104,20 @@ export class Scene {
       this.#drawSign(Math.round(sign.x * tile - camX), Math.round(sign.y * tile - camY));
     }
 
-    // 人物は上から順に描くと重なりが自然になる
-    const people = [...(view.npcs || []).map((n) => ({ ...n, py: n.y })), { hero: true, ...hero, py: hero.y + hero.oy }];
-    people.sort((a, b) => a.py - b.py);
+    // 人物は上にいる順に描くと重なりが自然になる。仲間は隊列のうしろから。
+    const people = [
+      ...(view.npcs || []).map((n) => ({ ...n })),
+      ...[...view.party].reverse(),
+    ];
+    people.sort((a, b) => a.y - b.y);
     for (const p of people) {
-      const px = Math.round(((p.hero ? p.x + p.ox : p.x) * tile) - camX);
-      const py = Math.round(((p.hero ? p.y + p.oy : p.y) * tile) - camY);
+      const px = Math.round(p.x * tile - camX);
+      const py = Math.round(p.y * tile - camY);
       if (p.emoji) this.#drawEmoji(p.emoji, px, py, tile * 0.72);
-      else this.#drawPerson(px, py, p.hero ? { cloth: '#3f8bff', hair: '#f6b93b', hero: true } : p.look || {}, p.dir || 'down', p.frame || 0, p.small);
+      else this.#drawPerson(px, py, p.look || {}, p.dir || 'down', p.frame || 0, p.small, p.down);
     }
 
-    if (map.dark) this.#drawDarkness(Math.round((hero.x + hero.ox) * tile - camX), Math.round((hero.y + hero.oy) * tile - camY));
+    if (map.dark) this.#drawDarkness(Math.round(hero.x * tile - camX), Math.round(hero.y * tile - camY));
     if (view.flash) {
       ctx.fillStyle = `rgba(255,255,255,${view.flash})`;
       ctx.fillRect(0, 0, this.w, this.h);
@@ -482,9 +486,11 @@ export class Scene {
   }
 
   /** ドット絵ふうの人物。dir と frame で向きと歩きを変える。 */
-  #drawPerson(px, py, look, dir, frame, small = false) {
+  #drawPerson(px, py, look, dir, frame, small = false, down = false) {
     const { ctx, tile } = this;
     const s = tile * (small ? 0.78 : 1);
+    ctx.save();
+    if (down) ctx.globalAlpha = 0.45;      // 死んでいる仲間は うすく
     const ox = px + (tile - s) / 2;
     const oy = py + (tile - s);
     const cloth = look.cloth || '#c0392b';
@@ -538,6 +544,7 @@ export class Scene {
     } else if (dir === 'right') {
       ctx.fillRect(ox + s * 0.61, oy + s * 0.36, eye, eye * 1.6);
     }
+    ctx.restore();
   }
 
   /** 洞窟の暗闇。たいまつの明かりぶんだけ見える。 */
