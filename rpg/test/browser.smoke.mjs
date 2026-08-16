@@ -326,6 +326,39 @@ await page.evaluate(() => window.rpg.persist());
 const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('rpg:save')));
 ok('ぼうけんの きろくが 残る', saved && saved.flags.bossDead === true);
 
+// ---------------------------------------------------------------- 音
+
+const audio = await page.evaluate(() => ({ ...window.rpg.audio }));
+ok('場面に合わせて 曲が鳴っている', audio.enabled === true && typeof audio.song === 'string' && audio.song.length > 0);
+
+await page.click('#btn-sound');
+await page.waitForTimeout(200);
+const muted = await page.evaluate(() => ({ ...window.rpg.audio, stored: localStorage.getItem('rpg:sound') }));
+ok('音を消せて、設定が残る', muted.enabled === false && muted.stored === 'off');
+await page.click('#btn-sound');
+await page.waitForTimeout(200);
+ok('もう一度おすと 音が戻る', (await page.evaluate(() => window.rpg.audio.enabled)) === true);
+
+// 実際に 波形が出ているかを オフラインで 描かせて確かめる
+const peak = await page.evaluate(async () => {
+  const mod = await import('./src/audio.js');
+  const off = new OfflineAudioContext(1, 44100 * 2, 44100);
+  const box = new mod.Jukebox();
+  const RealCtx = window.AudioContext;
+  window.AudioContext = function () { return off; };     // 録音用の箱に すりかえる
+  box.unlock();
+  window.AudioContext = RealCtx;
+  box.play('battle');
+  box.sfx('levelup');
+  const buffer = await off.startRendering();
+  box.stop();
+  const data = buffer.getChannelData(0);
+  let max = 0;
+  for (let i = 0; i < data.length; i++) max = Math.max(max, Math.abs(data[i]));
+  return max;
+});
+ok(`曲と効果音が 実際に音の波になっている（ピーク ${peak.toFixed(3)}）`, peak > 0.01 && peak <= 1);
+
 ok('コンソールにエラーが出ていない', errors.length === 0);
 if (errors.length) console.log(errors.slice(0, 10));
 

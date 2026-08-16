@@ -63,6 +63,21 @@ body {
 
 .topbar-links a:hover { color: var(--text); border-color: #4a5a86; }
 
+.sound-btn {
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text);
+  background: #101528;
+  border: 2px solid #26304a;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.sound-btn:hover { border-color: #4a5a86; }
+.sound-btn[aria-pressed="false"] { opacity: 0.5; }
+
 /* ---------------------------------------------------------------- 画面 */
 
 .stage {

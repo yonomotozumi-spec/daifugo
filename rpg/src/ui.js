@@ -10,9 +10,11 @@ import {
   mapById, npcAt, signAt, warpAt,
 } from './world.js';
 import { Scene } from './scene.js';
+import { Jukebox, songForMap } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'rpg:save';
+const SOUND_KEY = 'rpg:sound';
 const STEP_MS = 150;          // 1 マス歩くのにかかる時間
 const TYPE_MS = 22;           // 1 文字あたりの表示速度
 
@@ -38,6 +40,13 @@ const state = {
 
 const party = () => state.save.party;
 const leader = () => leaderOf(state.save);
+
+// 音は Web Audio で その場で合成する（音源ファイルなし）。
+const audio = new Jukebox({ enabled: localStorage.getItem(SOUND_KEY) !== 'off' });
+
+/** いまの場所に合った曲へ戻す。 */
+const mapSong = () => songForMap(state.map);
+const playMapSong = () => audio.play(mapSong());
 
 // ---------------------------------------------------------------- セーブ
 
@@ -171,6 +180,7 @@ function menu({ title = '', items, cancel = true, wide = false }) {
     const pick = () => {
       const item = items[state.pending.index];
       if (!item || item.disabled) return;
+      audio.sfx('select');
       close();
       resolve(item.value);
     };
@@ -185,10 +195,11 @@ function menu({ title = '', items, cancel = true, wide = false }) {
           const next = (state.pending.index + delta * step + n * step) % n;
           if (!items[next].disabled) { state.pending.index = next; break; }
         }
+        audio.sfx('cursor');
         highlight();
       },
       pick,
-      cancel: cancel ? () => { close(); resolve(null); } : null,
+      cancel: cancel ? () => { audio.sfx('cancel'); close(); resolve(null); } : null,
     };
     highlight();
   });
@@ -255,6 +266,7 @@ function enterMap(id, x, y, dir = 'down') {
   state.trail = [{ x, y, dir }, { x, y, dir }, { x, y, dir }];
   refreshNpcs();
   if (map.kind !== 'room') showPlace(map.name);
+  if (state.mode !== 'battle') playMapSong();
   renderHud();
   save();
 }
@@ -373,6 +385,7 @@ async function openChest(chest) {
       save();
     }
     data.chests.push(chest.id);
+    audio.sfx('chest');
     if (chest.gold) {
       data.gold += chest.gold;
       await say(`宝箱を あけた！\n${chest.gold} ゴールドを 手にいれた！`);
@@ -433,6 +446,7 @@ async function recruit(npc) {
     return;
   }
   const res = joinParty(data, npc.member.cls, npc.member.name, npc.member.minLevel || 1);
+  audio.sfx('join');
   await say(res.text);
   if (res.ok) {
     data.flags[`join:${npc.id}`] = true;
@@ -477,6 +491,7 @@ async function altar(npc) {
   addItem(data, npc.gives);
   data.flags[`altar:${npc.id}`] = true;
   state.flash = 1;
+  audio.sfx('star');
   await sayAll(npc.giveLines || []);
   renderHud();
   save();
@@ -534,6 +549,7 @@ async function shop(npc) {
         who = picked;
       }
       const res = buy(data, id, who);
+      if (res.ok) audio.sfx('buy');
       await say(res.text);
       renderHud();
       save();
@@ -713,6 +729,7 @@ async function castMenu(where, actor = null) {
 }
 
 async function warpHome() {
+  audio.sfx('warp');
   state.flash = 1;
   await wait(320);
   state.flash = 0;
@@ -728,12 +745,14 @@ async function startBattle(monsterId) {
   state.mode = 'battle';
   state.held = null;
 
+  audio.sfx('encounter');
   for (let i = 0; i < 3; i++) {          // 出会いがしらの点滅
     state.flash = 0.85;
     await wait(70);
     state.flash = 0;
     await wait(60);
   }
+  audio.play(battle.monster.boss ? 'boss' : 'battle');
 
   state.view = {
     monster: battle.monster,
@@ -800,8 +819,24 @@ async function chooseCommands() {
 }
 
 /** 戦闘メッセージを演出つきで流す。 */
+const BATTLE_SFX = {
+  swing: 'swing',
+  'hit-monster': 'hit',
+  critical: 'critical',
+  'hit-hero': 'hurt',
+  'hit-hero-magic': 'hurt',
+  cast: 'cast',
+  heal: 'heal',
+  'heal-monster': 'heal',
+  buff: 'heal',
+  dead: 'dead',
+  wipe: 'dead',
+  defeat: 'defeat',
+};
+
 async function playLines(lines) {
   for (const line of lines) {
+    if (BATTLE_SFX[line.fx]) audio.sfx(BATTLE_SFX[line.fx]);
     if (line.fx === 'hit-monster' || line.fx === 'critical') {
       state.view.flash = 1;
       state.view.shake = 5;
@@ -829,15 +864,18 @@ async function endBattle() {
 
   if (battle.result === 'win') {
     const { exp, gold, levels } = claimReward(data, battle);
+    if (!battle.monster.final) audio.jingle('victory', mapSong());
     renderHud();
     if (exp || gold) await say(`経験値 ${exp} ポイントを かくとくした。\n${gold} ゴールドを 手にいれた！`);
     for (const up of levels) {
       renderHud();
+      audio.sfx('levelup');
       await say(`${up.member.name}は レベル ${up.level} に あがった！`);
       for (const spell of up.spells) await say(`${up.member.name}は ${spell.name}の 呪文を おぼえた！`);
     }
     if (battle.monster.final) { await ending(); return; }
   } else if (battle.result === 'lose') {
+    audio.play('gameover');
     await say('……');
     const { lost } = onDefeat(data);
     await say(`目をさますと 村の 宿屋の ベッドだった。\n${lost} ゴールドを 落としてしまった……`);
@@ -850,6 +888,7 @@ async function endBattle() {
   }
 
   closeBattle();
+  if (battle.result !== 'win') playMapSong();   // 勝ったときは ファンファーレのあとで戻る
   save();
 }
 
@@ -866,6 +905,7 @@ function closeBattle() {
 async function ending() {
   const data = state.save;
   data.flags.bossDead = true;
+  audio.play('ending');
   state.view.fade = 0;
   for (let i = 0; i <= 20; i++) { state.view.fade = i / 20; await wait(40); }
 
@@ -939,6 +979,24 @@ function setHeld(dir) {
   state.held = dir;
 }
 
+function paintSoundButton() {
+  const btn = $('btn-sound');
+  btn.textContent = audio.enabled ? '🔊' : '🔇';
+  btn.setAttribute('aria-pressed', String(audio.enabled));
+}
+
+function toggleSound(on = !audio.enabled) {
+  audio.unlock();
+  audio.setEnabled(on);
+  localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
+  paintSoundButton();
+  if (on) {
+    if (state.mode === 'title') audio.play('title');
+    else if (state.mode === 'battle') audio.play(state.battle?.monster.boss ? 'boss' : 'battle');
+    else playMapSong();
+  }
+}
+
 const DIR_KEYS = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
   w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
@@ -960,6 +1018,8 @@ function onKeyDown(e) {
   } else if (e.key === 'Escape' || e.key === 'x' || e.key === 'X') {
     e.preventDefault();
     press('cancel');
+  } else if (e.key === 'm' || e.key === 'M') {
+    toggleSound();
   }
 }
 
@@ -1080,6 +1140,7 @@ function frame(now) {
 // ---------------------------------------------------------------- 立ち上げ
 
 function startGame(data) {
+  audio.unlock();
   state.save = data;
   state.mode = 'field';
   $('title').hidden = true;
@@ -1108,6 +1169,15 @@ function init() {
   window.addEventListener('blur', () => { state.held = null; });
   setupTouch();
 
+  // 音は 画面に さわってからでないと 鳴らせない決まりなので、
+  // タイトルを ひと押しした時点で 目をさます。
+  $('btn-sound').addEventListener('click', () => toggleSound());
+  $('title').addEventListener('pointerdown', () => {
+    audio.unlock();
+    if (state.mode === 'title' && audio.enabled) audio.play('title');
+  });
+  paintSoundButton();
+
   const saved = load();
   if (saved) {
     $('btn-continue').hidden = false;
@@ -1133,6 +1203,8 @@ function init() {
     teleport(map, x, y) { enterMap(map, x, y, 'down'); },
     encounter(id) { startBattle(id); },   // 待たずに返す（テストから操作できるように）
     persist: save,                        // save は上の getter（セーブデータ）なので別名で
+    get audio() { return { enabled: audio.enabled, song: audio.current }; },
+    toggleSound,
     reset() { localStorage.removeItem(STORAGE_KEY); },
   };
 
