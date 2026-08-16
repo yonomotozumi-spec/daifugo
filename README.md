@@ -23,6 +23,9 @@ ES Modules を使っているため、`file://` で直接開くとブラウザ�
 - **ヒント** を押すと CPU と同じ思考ルーチンがおすすめの手を選んでくれます。
 - キーボード：`Enter` で出す、`P` でパス、`Esc` で選択解除。
 - 3 人があがった時点でラウンド終了。大富豪 3pt / 富豪 2pt / 貧民 1pt / 大貧民 0pt が加算されます。
+- **決めたラウンド数を戦い終えると、合計ポイントで総合順位と優勝者が決まります。**
+  長さは右上の **ルール設定** から 3 / 5 / 10 ラウンドで選べます（既定は 5）。
+  同点のときは大富豪を多く取ったほうが上、それも並べば同順位です。
 
 ## 対応しているルール
 
@@ -52,10 +55,12 @@ ES Modules を使っているため、`file://` で直接開くとブラウザ�
 ```
 index.html          画面のマークアップ
 src/engine.js       ルールエンジン（DOM 非依存。Node からも読める）
+src/match.js        ポイント集計と総合順位（DOM 非依存）
 src/ai.js           CPU の思考ルーチン
 src/ui.js           描画とイベント処理
 src/style.css       スタイル
 test/engine.test.js エンジンの単体テスト（node:test、依存なし）
+test/match.test.js  ポイント集計と総合順位のテスト
 test/browser.smoke.mjs 実ブラウザでの通し確認（Playwright、任意）
 ```
 
@@ -66,7 +71,7 @@ test/browser.smoke.mjs 実ブラウザでの通し確認（Playwright、任意�
 ## テスト
 
 ```
-npm test            # エンジンの単体テスト 22 件。依存パッケージなし
+npm test            # 大富豪 34 件 + 釣り 41 件。依存パッケージなし
 ```
 
 CPU 同士で 5 シード × 5 ラウンドを自動対戦させ、非合法手が出ないこと・
@@ -164,7 +169,7 @@ fishing/src/style.css       スタイル
 fishing/manifest.webmanifest ホーム画面アプリとしての設定（PWA）
 fishing/sw.js               オフラインで遊ぶための Service Worker
 fishing/icons/              アプリのアイコン（元データは icon.svg）
-fishing/test/engine.test.js エンジンの単体テスト（36 件）
+fishing/test/engine.test.js エンジンの単体テスト（41 件）
 fishing/test/browser.smoke.mjs 実ブラウザでの通し確認（Playwright、任意）
 fishing/test/mobile.smoke.mjs  スマホ・タブレットでの通し確認（Playwright、任意）
 ```
@@ -176,7 +181,7 @@ fishing/test/mobile.smoke.mjs  スマホ・タブレットでの通し確認（P
 バランス調整や魚の追加はそこだけ触れば済みます。乱数も差し替え可能（`pickFish(spot, { rng })`）です。
 
 ```
-npm test                       # 大富豪 22 件 + 釣り 36 件
+npm test                       # 大富豪 34 件 + 釣り 41 件（合計 75 件）
 npm run test:browser:fishing   # 実ブラウザで 3 匹釣って売って買うところまで通す（要 Playwright）
 npm run test:mobile            # iPhone / iPad 相当の画面で、指だけで遊べるか・
                                # 機内モードでも起動するかまで通す（要 Playwright）

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>大富豪 — ブラウザで遊べるカードゲーム</title>
 <meta name="description" content="CPU 3人と対戦できる大富豪（大貧民）。革命・8切り・縛り・階段・スペ3返しに対応。">
 <link rel="stylesheet" href="src/style.css">
@@ -70,8 +70,19 @@
 <dialog id="dlg-result">
   <h2 id="result-title">ラウンド終了</h2>
   <ol class="result-list" id="result-list"></ol>
+  <p class="hint" id="result-note"></p>
   <menu>
     <button type="button" class="primary" id="result-next">次のラウンドへ</button>
+  </menu>
+</dialog>
+
+<!-- 総合結果 -->
+<dialog id="dlg-final">
+  <h2 id="final-title">総合結果</h2>
+  <ol class="result-list final-list" id="final-list"></ol>
+  <p class="hint" id="final-note"></p>
+  <menu>
+    <button type="button" class="primary" id="final-again">もう一度あそぶ</button>
   </menu>
 </dialog>
 
@@ -86,6 +97,14 @@
     <label><input type="checkbox" name="sequence"> <span><b>階段</b>同じスートの3枚以上の連番を出せる</span></label>
     <label><input type="checkbox" name="spade3"> <span><b>スペ3返し</b>ジョーカー1枚に♠3で勝てる</span></label>
     <label><input type="checkbox" name="exchange"> <span><b>カード交換</b>2ラウンド目以降に上位と下位で交換</span></label>
+    <label class="rounds">
+      <span><b>ゲームの長さ</b>この数だけラウンドを戦い、合計ポイントで優勝を決めます</span>
+      <select name="matchRounds">
+        <option value="3">3 ラウンド（短め）</option>
+        <option value="5">5 ラウンド（ふつう）</option>
+        <option value="10">10 ラウンド（じっくり）</option>
+      </select>
+    </label>
     <menu>
       <button type="button" class="ghost" id="settings-cancel">閉じる</button>
       <button type="submit" class="primary">この設定で始める</button>
