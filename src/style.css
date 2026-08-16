@@ -16,6 +16,8 @@
 html, body {
   margin: 0;
   min-height: 100%;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 body {
@@ -29,6 +31,26 @@ body {
   font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   color: #f3f6f4;
   background: radial-gradient(ellipse at 50% 0%, #17714a 0%, var(--felt) 45%, var(--felt-dark) 100%);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/*
+ * スマホでカードを長押しすると、iOS が拡大鏡や選択メニューを出してしまう。
+ * 触って遊ぶ部品では、選択も長押しメニューもダブルタップ拡大も止める。
+ * 実況や結果の文章だけ、あとで選べるように戻す。
+ */
+button, a, .card, .seat, .badge, .topbar, .controls, .hand, .field, .opponents {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.log li, .result-list li, dialog p, dialog label span {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* ------------------------------------------------------------ ヘッダー */
@@ -323,6 +345,7 @@ button.card:disabled { opacity: 1; }
 .scores, .log { list-style: none; margin: 0; padding: 0; font-size: 13px; }
 .scores li { display: flex; gap: 8px; padding: 3px 0; }
 .scores .pts { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.9; }
+.scores .me-row { font-weight: 700; }
 .log li { padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); opacity: 0.85; }
 .log li:first-child { opacity: 1; color: #ffe9a8; }
 
@@ -372,6 +395,43 @@ dialog button.primary { background: var(--gold); color: #3a2b06; }
 .hidden { display: none !important; }
 
 /* ------------------------------------------------------------ 画面が狭いとき */
+
+/* ------------------------------------------------------------ 総合結果 */
+
+#final-title { transition: color 0.2s ease; }
+#final-title.win { color: var(--gold); }
+
+.final-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.final-list .pts {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+/* ゲームの長さを選ぶところ */
+.rounds {
+  display: block;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.rounds select {
+  font: inherit;
+  margin-top: 6px;
+  padding: 7px 10px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+}
 
 @media (max-width: 900px) {
   body {
