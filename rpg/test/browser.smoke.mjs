@@ -85,6 +85,51 @@ ok('村から ぼうけんが始まる', (await game()).map === 'town' && (await
 ok('はじめは ゆうしゃ ひとり', (await partySize()) === 1);
 await shot('02-town');
 
+// ------------------------------------------------------------ 歩きのなめらかさ
+// 世界は 毎フレーム 同じだけ流れ、主人公は 画面の同じところに 止まって見えるはず。
+// カメラを 整数に丸めたり、歩きのはずみを カメラに 混ぜたりすると ここが崩れる。
+{
+  const home = await page.evaluate(() => ({ x: window.rpg.save.x, y: window.rpg.save.y }));
+  // 野原は 画面より ずっと広いので カメラが しっかり流れる。
+  // 途中で 魔物に出られると 測れないので、この間だけ 出現率を 0 にする。
+  await page.evaluate(() => {
+    window.rpg.teleport('world', 10, 12);
+    window.__encRate = window.rpg.state.map.encRate;
+    window.rpg.state.map.encRate = 0;
+  });
+  await page.waitForTimeout(300);
+  await page.keyboard.down('ArrowDown');
+  await page.waitForTimeout(400);                                 // カメラが 追いつくまで待つ
+  const rows = await page.evaluate(() => new Promise((done) => {
+    const out = [];
+    let n = 0;
+    const tick = () => {
+      const s = window.rpg.state;
+      out.push({ hero: (s.save.y + s.oy) * s.scene.tile, cam: s.scene.cam.y });
+      if (++n < 30) requestAnimationFrame(tick); else done(out);
+    };
+    requestAnimationFrame(tick);
+  }));
+  await page.keyboard.up('ArrowDown');
+
+  const ground = [];
+  const onScreen = [];
+  for (let i = 1; i < rows.length; i++) {
+    ground.push(rows[i].cam - rows[i - 1].cam);
+    onScreen.push((rows[i].hero - rows[i].cam) - (rows[i - 1].hero - rows[i - 1].cam));
+  }
+  const mid = [...ground].sort((a, b) => a - b)[Math.floor(ground.length / 2)];
+  const jumpy = ground.filter((v) => Math.abs(v - mid) > 0.35).length;
+  const drift = Math.max(...onScreen.map(Math.abs));
+  ok(`地面が 一定の速さで流れる（中央値 ${mid.toFixed(2)}px、ばらつき ${jumpy}/${ground.length}）`, mid > 1 && jumpy === 0);
+  ok(`主人公が 画面の同じ場所に とどまる（ぶれ ${drift.toFixed(2)}px）`, drift < 0.35);
+
+  await page.evaluate(() => { window.rpg.state.map.encRate = window.__encRate; });
+  await page.evaluate(({ x, y }) => window.rpg.teleport('town', x, y), home);   // 出発点に もどす
+  await page.waitForTimeout(250);
+}
+await clearMessages();
+
 // ---------------------------------------------------------------- 道具屋で買い物
 
 await page.evaluate(() => window.rpg.teleport('item', 4, 3));

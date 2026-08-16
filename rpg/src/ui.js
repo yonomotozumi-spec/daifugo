@@ -1108,9 +1108,12 @@ function partyOnMap() {
     ? -Math.abs(Math.sin(p * Math.PI)) * 0.05
     : Math.sin(now * 1.8 + i * 0.9) * 0.012);
 
+  // はずみは y ではなく bob で渡す。y に混ぜると カメラが それを追いかけて
+  // 世界ごと 上下に ゆれてしまう。
   const people = [{
     x: data.x + state.ox,
-    y: data.y + state.oy + bounce(0),
+    y: data.y + state.oy,
+    bob: bounce(0),
     dir: data.dir,
     frame: legs(state.frame),
     look: classById(party()[0].cls).look,
@@ -1120,7 +1123,8 @@ function partyOnMap() {
     const from = state.trail[i] || to;
     people.push({
       x: from.x + (to.x - from.x) * p,
-      y: from.y + (to.y - from.y) * p + bounce(i),
+      y: from.y + (to.y - from.y) * p,
+      bob: bounce(i),
       dir: to.dir,
       frame: legs(state.frame + i),
       look: classById(party()[i].cls).look,

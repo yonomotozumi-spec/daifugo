@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ART, artOf, drawMonster, shade } from '../src/monsters.js';
+import { ART, artOf, drawMonster, fade, shade } from '../src/monsters.js';
 import { MONSTERS } from '../src/engine.js';
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -58,4 +58,10 @@ test('色を明るく／暗くできる', () => {
   const dark = shade('#5bd57f', -0.4);
   assert.ok(HEX.test(dark));
   assert.ok(parseInt(dark.slice(1, 3), 16) < 0x5b);
+});
+
+test('色を 半透明にできる', () => {
+  assert.equal(fade('#5bd57f', 0.5), 'rgba(91,213,127,0.5)');
+  assert.equal(fade('#000000', 0), 'rgba(0,0,0,0)');
+  assert.equal(fade('#ffffff', 1), 'rgba(255,255,255,1)');
 });

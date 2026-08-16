@@ -13,6 +13,14 @@ function hash(x, y) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+/**
+ * タイルの下地を 1px だけ はみ出して塗るための ふくらみ。
+ * カメラが 小数の位置にいると、ぴったり隣りあわせに塗った四角のあいだに
+ * 半透明の すきま（継ぎ目）が出る。右と下へ 少し重ねて 消す。
+ * 描く順が 左→右・上→下 なので、はみ出した分は あとから来る隣が 塗りつぶす。
+ */
+const BLEED = 1;
+
 const COLORS = {
   grass: ['#5ba05a', '#4e9150'],
   forest: '#2f7d43',
@@ -50,14 +58,15 @@ export class Scene {
   resize() {
     const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
     const rect = this.canvas.getBoundingClientRect();
-    const w = Math.max(240, Math.round(rect.width || this.canvas.clientWidth || 640));
-    const h = Math.max(180, Math.round(rect.height || this.canvas.clientHeight || 400));
+    // 幅は 丸めずに 小数のまま使う。整数に丸めると 画面と描画面の 縮尺が わずかにずれて、
+    // 動かしたときに 線が 太くなったり 消えたりする。
+    const w = Math.max(240, rect.width || this.canvas.clientWidth || 640);
+    const h = Math.max(180, rect.height || this.canvas.clientHeight || 400);
     this.w = w;
     this.h = h;
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.setTransform(this.canvas.width / w, 0, 0, this.canvas.height / h, 0, 0);
     // 画面の広さに合わせて、横 15 マス前後が見える大きさにする（大きくなりすぎないよう頭打ち）。
     this.tile = clamp(Math.round(Math.min(w / 15, h / 10)), 24, 48);
   }
@@ -91,12 +100,13 @@ export class Scene {
     const follow = 1 - Math.exp(-dt / 34);
     this.cam.x += (targetX - this.cam.x) * follow;
     this.cam.y += (targetY - this.cam.y) * follow;
-    if (Math.abs(targetX - this.cam.x) < 0.35) this.cam.x = targetX;
-    if (Math.abs(targetY - this.cam.y) < 0.35) this.cam.y = targetY;
+    if (Math.abs(targetX - this.cam.x) < 0.05) this.cam.x = targetX;
+    if (Math.abs(targetY - this.cam.y) < 0.05) this.cam.y = targetY;
 
-    // 地面は 整数ピクセルに置く（タイルの継ぎ目がちらつかない）。
-    const camX = Math.round(this.cam.x);
-    const camY = Math.round(this.cam.y);
+    // カメラは 小数のまま使う。整数に丸めると 世界が 1px ずつ 飛んで かくついて見える。
+    // タイルの継ぎ目は 1px ぶん はみ出して塗ることで 埋める（#drawTile の bleed）。
+    const camX = this.cam.x;
+    const camY = this.cam.y;
 
     ctx.fillStyle = map.kind === 'room' ? '#2b2118' : map.dark ? '#05060a' : '#12351f';
     ctx.fillRect(0, 0, this.w, this.h);
@@ -108,18 +118,16 @@ export class Scene {
 
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
-        const px = Math.round(x * tile - camX);
-        const py = Math.round(y * tile - camY);
-        this.#drawTile(map, x, y, px, py);
+        this.#drawTile(map, x, y, x * tile - camX, y * tile - camY);
       }
     }
 
     // 宝箱・立て札
     for (const chest of chestsOf(map, view.opened || [])) {
-      this.#drawChest(Math.round(chest.x * tile - camX), Math.round(chest.y * tile - camY));
+      this.#drawChest(chest.x * tile - camX, chest.y * tile - camY);
     }
     for (const sign of map.signs || []) {
-      this.#drawSign(Math.round(sign.x * tile - camX), Math.round(sign.y * tile - camY));
+      this.#drawSign(sign.x * tile - camX, sign.y * tile - camY);
     }
 
     // 人物は上にいる順に描くと重なりが自然になる。仲間は隊列のうしろから。
@@ -129,8 +137,8 @@ export class Scene {
     ];
     people.sort((a, b) => a.y - b.y);
     for (const p of people) {
-      const px = p.x * tile - camX;         // 人だけは 小数のまま置く
-      const py = p.y * tile - camY;
+      const px = p.x * tile - camX;         // 地面と 同じカメラで置くので 足もとがずれない
+      const py = (p.y + (p.bob || 0)) * tile - camY;   // 歩きのはずみは 絵だけに効かせる
       if (p.monster && drawMonster(ctx, p.monster, px + tile / 2, py + tile * 0.5, tile * 1.05, this.time / 1000)) continue;
       if (p.emoji) this.#drawEmoji(p.emoji, px, py, tile * 0.72);
       else this.#drawPerson(px, py, p.look || {}, p.dir || 'down', p.frame || 0, p.small, p.down);
@@ -147,7 +155,7 @@ export class Scene {
     const { ctx, tile } = this;
     if (!inside(map, x, y)) {                 // マップの外は のっぺりした闇
       ctx.fillStyle = map.kind === 'room' ? '#1b140e' : map.dark ? '#05060a' : '#0a1a12';
-      ctx.fillRect(px, py, tile, tile);
+      ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
       return;
     }
     const ch = tileAt(map, x, y);
@@ -246,7 +254,7 @@ export class Scene {
   #floorGrass(px, py, n) {
     const { ctx, tile } = this;
     ctx.fillStyle = n > 0.5 ? COLORS.grass[0] : COLORS.grass[1];
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     const gx = px + tile * (0.15 + n * 0.6);
     const gy = py + tile * (0.2 + (1 - n) * 0.6);
@@ -256,7 +264,7 @@ export class Scene {
   #floorPath(px, py, n) {
     const { ctx, tile } = this;
     ctx.fillStyle = n > 0.5 ? COLORS.sand : '#cdbb8f';
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.fillStyle = 'rgba(0,0,0,0.06)';
     ctx.fillRect(px + tile * n * 0.6, py + tile * (1 - n) * 0.6, tile * 0.16, tile * 0.1);
   }
@@ -264,7 +272,7 @@ export class Scene {
   #floorWood(px, py, n) {
     const { ctx, tile } = this;
     ctx.fillStyle = n > 0.5 ? '#8a5a33' : '#7d5230';
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -276,7 +284,7 @@ export class Scene {
   #floorStone(px, py, n, castle) {
     const { ctx, tile } = this;
     ctx.fillStyle = castle ? (n > 0.5 ? '#5f5279' : '#584b71') : n > 0.5 ? '#6f6558' : '#665c50';
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.strokeStyle = 'rgba(0,0,0,0.22)';
     ctx.lineWidth = 1;
     ctx.strokeRect(px + 0.5, py + 0.5, tile - 1, tile - 1);
@@ -289,7 +297,7 @@ export class Scene {
   #wall(px, py, n, kind) {
     const { ctx, tile } = this;
     ctx.fillStyle = kind === 'castle' ? '#241c33' : kind === 'cave' ? '#2b251d' : '#7c6a58';
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.fillStyle = 'rgba(255,255,255,0.14)';
     ctx.fillRect(px, py, tile, tile * 0.12);
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
@@ -309,7 +317,7 @@ export class Scene {
   #lighthouse(px, py, top) {
     const { ctx, tile } = this;
     ctx.fillStyle = '#e9ecef';
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.fillStyle = '#c92a2a';
     ctx.fillRect(px, py + tile * 0.34, tile, tile * 0.16);
     ctx.fillRect(px, py + tile * 0.74, tile, tile * 0.16);
@@ -374,7 +382,7 @@ export class Scene {
   #mountain(px, py, n) {
     const { ctx, tile } = this;
     ctx.fillStyle = '#4f4335';
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.fillStyle = COLORS.mountain;
     ctx.beginPath();
     ctx.moveTo(px + tile * 0.5, py + tile * (0.05 + n * 0.1));
@@ -394,7 +402,7 @@ export class Scene {
   #water(px, py, n, t) {
     const { ctx, tile } = this;
     ctx.fillStyle = COLORS.water;
-    ctx.fillRect(px, py, tile, tile);
+    ctx.fillRect(px, py, tile + BLEED, tile + BLEED);
     ctx.fillStyle = 'rgba(255,255,255,0.22)';
     const wave = Math.sin(t * 2 + n * 6.28) * tile * 0.12;
     ctx.fillRect(px + tile * 0.15 + wave, py + tile * 0.3, tile * 0.3, Math.max(1, tile * 0.06));
@@ -654,10 +662,19 @@ export class Scene {
     const cx = w / 2 + shake;
     const cy = h * 0.44 + bob;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    // 足もとの影。ふちを ぼかすと 地面に のっているように見える。
+    ctx.save();
+    ctx.translate(w / 2, h * 0.66);
+    ctx.scale(1, 0.25);
+    const shadow = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.42);
+    shadow.addColorStop(0, 'rgba(0,0,0,0.42)');
+    shadow.addColorStop(0.6, 'rgba(0,0,0,0.22)');
+    shadow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = shadow;
     ctx.beginPath();
-    ctx.ellipse(w / 2, h * 0.66, size * 0.4, size * 0.1, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, size * 0.42, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
 
     ctx.save();
     if (view.dead) ctx.translate(0, view.dead * h * 0.12);
