@@ -103,25 +103,28 @@ await shot('02-town');
   const rows = await page.evaluate(() => new Promise((done) => {
     const out = [];
     let n = 0;
-    const tick = () => {
+    const tick = (t) => {
       const s = window.rpg.state;
-      out.push({ hero: (s.save.y + s.oy) * s.scene.tile, cam: s.scene.cam.y });
+      out.push({ t, hero: (s.save.y + s.oy) * s.scene.tile, cam: s.scene.cam.y });
       if (++n < 30) requestAnimationFrame(tick); else done(out);
     };
     requestAnimationFrame(tick);
   }));
   await page.keyboard.up('ArrowDown');
 
-  const ground = [];
+  // フレームの間隔じたいが ゆらぐ環境でも 測れるよう、1 秒あたりの速さに直して見る
+  const speed = [];
   const onScreen = [];
   for (let i = 1; i < rows.length; i++) {
-    ground.push(rows[i].cam - rows[i - 1].cam);
+    const dt = rows[i].t - rows[i - 1].t;
+    if (dt <= 0) continue;
+    speed.push(((rows[i].cam - rows[i - 1].cam) / dt) * 1000);
     onScreen.push((rows[i].hero - rows[i].cam) - (rows[i - 1].hero - rows[i - 1].cam));
   }
-  const mid = [...ground].sort((a, b) => a - b)[Math.floor(ground.length / 2)];
-  const jumpy = ground.filter((v) => Math.abs(v - mid) > 0.35).length;
+  const mid = [...speed].sort((a, b) => a - b)[Math.floor(speed.length / 2)];
+  const jumpy = speed.filter((v) => Math.abs(v - mid) > mid * 0.12).length;
   const drift = Math.max(...onScreen.map(Math.abs));
-  ok(`地面が 一定の速さで流れる（中央値 ${mid.toFixed(2)}px、ばらつき ${jumpy}/${ground.length}）`, mid > 1 && jumpy === 0);
+  ok(`地面が 一定の速さで流れる（中央値 ${mid.toFixed(0)}px/秒、ばらつき ${jumpy}/${speed.length}）`, mid > 100 && jumpy === 0);
   ok(`主人公が 画面の同じ場所に とどまる（ぶれ ${drift.toFixed(2)}px）`, drift < 0.35);
 
   await page.evaluate(() => { window.rpg.state.map.encRate = window.__encRate; });

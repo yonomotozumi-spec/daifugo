@@ -387,6 +387,20 @@ const PAINTERS = {
       beastLeg(ctx, cx + bodyW * lx + Math.sin(t * 4 + delay) * s * 0.01, cy + bodyH * 0.3, s, far, lw * 0.85);
     }
 
+    // くび。胴より さきに描いて、つけ根を 胸で 隠す（あとから描くと 板が のったように見える）
+    // あたまは 胸から しっかり離す。胴に かぶせると 頭のふちが 胴を横切って 継ぎ目に見える
+    const hx = cx + bodyW * 1.26;
+    const hy = cy - bodyH * 1.52;
+    cel(ctx, () => {
+      ctx.beginPath();
+      ctx.moveTo(cx + bodyW * 0.2, cy - bodyH * 0.6);
+      ctx.quadraticCurveTo(cx + bodyW * 0.74, cy - bodyH * 1.5, hx - s * 0.03, hy + s * 0.01);
+      ctx.lineTo(hx + s * 0.05, hy + s * 0.14);
+      ctx.quadraticCurveTo(cx + bodyW * 0.9, cy - bodyH * 0.4, cx + bodyW * 0.5, cy + bodyH * 0.2);
+      ctx.closePath();
+    }, { x: cx + bodyW * 0.2, y: hy, w: bodyW * 0.95, h: bodyH * 1.6 }, shade(p.body, -0.06),
+    { lineWidth: lw * 0.7, gloss: false, outline: false });   // ふちどると 胸に 継ぎ目の線が出る
+
     // 胴。しりは丸く、胸へ向かって しぼる
     cel(ctx, () => {
       ctx.beginPath();
@@ -419,33 +433,30 @@ const PAINTERS = {
       beastLeg(ctx, cx + bodyW * lx + Math.sin(t * 4 + delay) * s * 0.012, cy + bodyH * 0.36, s, p.body, lw);
     }
 
-    // くび
-    const hx = cx + bodyW * 1.1;
-    const hy = cy - bodyH * 1.32;
-    cel(ctx, () => {
-      ctx.beginPath();
-      ctx.moveTo(cx + bodyW * 0.3, cy - bodyH * 0.95);
-      ctx.quadraticCurveTo(cx + bodyW * 0.78, cy - bodyH * 1.6, hx - s * 0.02, hy + s * 0.01);
-      ctx.lineTo(hx + s * 0.05, hy + s * 0.13);
-      ctx.quadraticCurveTo(cx + bodyW * 0.9, cy - bodyH * 0.5, cx + bodyW * 0.5, cy - bodyH * 0.15);
-      ctx.closePath();
-    }, { x: cx + bodyW * 0.3, y: hy, w: bodyW * 0.9, h: bodyH * 1.5 }, p.body, { lineWidth: lw, gloss: false });
-
     if (p.mane) {
-      // 毛のふさ。点の数は 偶数にしないと 内と外が そろわず 多角形に見えてしまう
-      const tufts = 11;
-      cel(ctx, () => {
-        ctx.beginPath();
-        for (let i = 0; i < tufts * 2; i++) {
-          const a2 = (i / (tufts * 2)) * TAU - 0.3;
-          const r = s * (i % 2 ? 0.135 : 0.225);
-          const mx = hx + Math.cos(a2) * r * 1.05;
-          const my = hy + Math.sin(a2) * r;
-          if (i === 0) ctx.moveTo(mx, my);
-          else ctx.lineTo(mx, my);
-        }
-        ctx.closePath();
-      }, { x: hx - s * 0.24, y: hy - s * 0.23, w: s * 0.47, h: s * 0.45 }, shade(p.body, -0.34), { lineWidth: lw * 0.8, gloss: false });
+      // 毛は 一枚のギザギザではなく、ふさを 1 本ずつ 放射状に生やす。
+      // 一枚にすると 大きく描いたとき ただの多角形の板に見えてしまう。
+      const tufts = 13;
+      for (let i = 0; i < tufts; i++) {
+        const a2 = (i / tufts) * TAU + 0.24;
+        const nx = Math.cos(a2);
+        const ny = Math.sin(a2);
+        const inner = s * 0.09;
+        const outer = s * (0.19 + (i % 3) * 0.017);
+        const wide = s * 0.045;
+        cel(ctx, () => {
+          ctx.beginPath();
+          ctx.moveTo(hx + nx * inner - ny * wide, hy + ny * inner + nx * wide);
+          ctx.quadraticCurveTo(hx + nx * outer * 0.86 - ny * wide * 0.5, hy + ny * outer * 0.86 + nx * wide * 0.5, hx + nx * outer, hy + ny * outer);
+          ctx.quadraticCurveTo(hx + nx * outer * 0.86 + ny * wide * 0.5, hy + ny * outer * 0.86 - nx * wide * 0.5, hx + nx * inner + ny * wide, hy + ny * inner - nx * wide);
+          ctx.closePath();
+        }, {
+          x: hx + nx * inner - wide * 1.6,
+          y: hy + ny * inner - wide * 1.6,
+          w: (outer - inner) + wide * 3.2,
+          h: (outer - inner) + wide * 3.2,
+        }, shade(p.body, -0.26 - (i % 3) * 0.06), { lineWidth: lw * 0.55, gloss: false, grainy: false });
+      }
     }
 
     // 耳（頭がい骨より さきに描いて 生えぎわを 隠す）
