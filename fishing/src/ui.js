@@ -32,6 +32,7 @@ let timer = null;
 let lastFrame = 0;
 let shopKind = 'rod';
 let displayMoney = player.money;
+let announcedSpot = null;   // 「行けるようになった」と知らせ済みの釣り場
 
 // ---------------------------------------------------------------- セーブ
 
@@ -94,6 +95,7 @@ function renderMoney(animate = true) {
   void $('wallet').offsetWidth;
   $('wallet').classList.add('bump');
   requestAnimationFrame(tick);
+  checkNewSpot();
 }
 
 function renderHud() {
@@ -111,6 +113,19 @@ function renderHud() {
   $('stat-book').textContent = `${prog.found} / ${prog.total}`;
   scene.setSpot(player.spot);
   scene.setTime(time.id);
+}
+
+/**
+ * 新しい釣り場に手が届いたら知らせる。
+ * ショップの奥に隠れていると、池だけで終わってしまうので。
+ */
+function checkNewSpot() {
+  const next = SPOTS.find((s) => !owns(player, 'spot', s.id) && player.money >= s.price);
+  $('btn-shop').classList.toggle('has-new', Boolean(next));
+  if (!next || announcedSpot === next.id) return;
+  announcedSpot = next.id;
+  log(`${next.name}に行けるようになった！ ショップの「釣り場」から移動できる`, 'money');
+  setStatus(`🎣 ${next.name}に行けるようになった！`, 'good');
 }
 
 function setAction(label, { disabled = false, hot = false } = {}) {
@@ -283,11 +298,11 @@ function sellResult() {
   buzz(15);
   sell(player, result);
   save();
-  renderMoney();
   log(`${result.fish.name}を ${yen(result.price)} で売った`, 'money');
   hideResult();
   backToIdle();
   setStatus(`${yen(result.price)} で売れた！`, 'good');
+  renderMoney();   // ここで新しい釣り場に届いたら、その知らせで上書きする
 }
 
 function releaseResult() {
@@ -430,6 +445,8 @@ function renderShop() {
         card.classList.add('bought');
       }
       save();
+      announcedSpot = null;
+      checkNewSpot();
       renderHud();
       renderShop();
       if (mode === MODE.idle) backToIdle();
@@ -627,6 +644,7 @@ function init() {
 
   renderMoney(false);
   renderHud();
+  checkNewSpot();
   setAction('キャスト');
   log('今日はいい天気だ。釣りに行こう。');
 

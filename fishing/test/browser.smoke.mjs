@@ -12,6 +12,9 @@
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
+// 値段や名前はゲーム側から読む（バランス調整のたびに直さなくて済むように）
+import { RODS, SPOTS } from '../src/engine.js';
+
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8123/fishing/';
 const OUT = new URL('./screenshots/', import.meta.url).pathname;
 await mkdir(OUT, { recursive: true });
@@ -87,7 +90,7 @@ const rodName = await rodCard.locator('h3').innerText();
 await rodCard.locator('button').click();
 await page.waitForTimeout(500);
 const afterBuy = await money();
-if (afterBuy !== 20000 - 900) throw new Error(`購入後の所持金がおかしい: ${afterBuy}`);
+if (afterBuy !== 20000 - RODS[1].price) throw new Error(`購入後の所持金がおかしい: ${afterBuy}`);
 const badge = await page.locator('#badge-rod').innerText();
 if (badge !== rodName) throw new Error(`買った竿が装備されていない: ${badge}`);
 console.log(`購入: ${rodName} → 残り ${afterBuy}円`);
@@ -99,9 +102,9 @@ await page.locator('.shop-item').nth(1).locator('button').click();
 await page.waitForTimeout(300);
 await shot('07-shop-spot');
 const spot = await page.locator('#badge-spot').innerText();
-if (spot !== '渓流') throw new Error(`釣り場が変わっていない: ${spot}`);
+if (spot !== SPOTS[1].name) throw new Error(`釣り場が変わっていない: ${spot}`);
 const finalMoney = await money();
-if (finalMoney !== afterBuy - 1500) throw new Error(`釣り場の代金が引かれていない: ${finalMoney}`);
+if (finalMoney !== afterBuy - SPOTS[1].price) throw new Error(`釣り場の代金が引かれていない: ${finalMoney}`);
 
 await page.keyboard.press('Escape');
 await page.waitForTimeout(400);
