@@ -4,6 +4,7 @@
  */
 
 import { chestsOf, inside, mapHeight, mapWidth, tileAt } from './world.js';
+import { drawMonster } from './monsters.js';
 
 /** タイルごとに決まる 0〜1 の値。草の生え方などをマスごとに固定するのに使う。 */
 function hash(x, y) {
@@ -113,6 +114,7 @@ export class Scene {
     for (const p of people) {
       const px = Math.round(p.x * tile - camX);
       const py = Math.round(p.y * tile - camY);
+      if (p.monster && drawMonster(ctx, p.monster, px + tile / 2, py + tile * 0.5, tile * 1.05, this.time / 1000)) continue;
       if (p.emoji) this.#drawEmoji(p.emoji, px, py, tile * 0.72);
       else this.#drawPerson(px, py, p.look || {}, p.dir || 'down', p.frame || 0, p.small, p.down);
     }
@@ -641,15 +643,18 @@ export class Scene {
     ctx.fill();
 
     ctx.save();
-    if (view.dead) { ctx.globalAlpha = Math.max(0, 1 - view.dead); ctx.translate(0, view.dead * h * 0.1); }
-    ctx.font = `${Math.round(size)}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (view.flash) {
-      ctx.shadowColor = '#fff';
-      ctx.shadowBlur = 30 * view.flash;
+    if (view.dead) ctx.translate(0, view.dead * h * 0.12);
+    const drawn = drawMonster(ctx, view.monster.id, cx, cy, size * 1.34, t, {
+      flash: view.flash,
+      fade: view.dead,
+    });
+    if (!drawn) {                       // 絵の用意がない魔物は 絵文字でしのぐ
+      ctx.globalAlpha = Math.max(0, 1 - (view.dead || 0));
+      ctx.font = `${Math.round(size)}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(view.monster.emoji, cx, cy);
     }
-    ctx.fillText(view.monster.emoji, cx, cy);
     ctx.restore();
 
     if (view.flash) {
