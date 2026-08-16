@@ -59,13 +59,12 @@ async function fight(command) {
   }
 }
 
+/** 1 回たたくと 1 マス進む（押しっぱなしにすると 続けて歩いてしまう）。 */
 async function walk(dir, steps) {
   const key = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }[dir];
   for (let i = 0; i < steps; i++) {
-    await page.keyboard.down(key);
-    await page.waitForTimeout(170);
-    await page.keyboard.up(key);
-    await page.waitForTimeout(40);
+    await page.keyboard.press(key);
+    await page.waitForTimeout(190);                  // 1 マスぶん歩き終わるまで待つ
     if ((await mode()) === 'battle') return false;   // 途中で魔物に出会った
   }
   return true;

@@ -42,6 +42,11 @@ export class Scene {
     this.resize();
   }
 
+  /** マップを移ったときは カメラを 追いかけさせずに 置きなおす。 */
+  resetCamera() {
+    this.cam = null;
+  }
+
   resize() {
     const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
     const rect = this.canvas.getBoundingClientRect();
@@ -77,9 +82,21 @@ export class Scene {
     // 暗い洞窟では 端に寄せると明かりが画面外に出てしまうので、いつも主人公を中央に置く。
     const free = (p, size, total) => p + tile / 2 - size / 2;
     const fit = (p, size, total) => (total <= size ? (total - size) / 2 : clamp(free(p, size, total), 0, total - size));
-    const camX = map.dark ? free(heroPx, this.w, cols * tile) : fit(heroPx, this.w, cols * tile);
-    const camY = map.dark ? free(heroPy, this.h, rows * tile) : fit(heroPy, this.h, rows * tile);
-    this.cam = { x: camX, y: camY };
+    const targetX = map.dark ? free(heroPx, this.w, cols * tile) : fit(heroPx, this.w, cols * tile);
+    const targetY = map.dark ? free(heroPy, this.h, rows * tile) : fit(heroPy, this.h, rows * tile);
+
+    // ほんの少しだけ 遅れて追いかけると、歩き出しと止まりが やわらかくなる。
+    // 追従の速さは 1 フレームの長さに寄らない（60fps でも 120fps でも同じ動き）。
+    if (!this.cam) this.cam = { x: targetX, y: targetY };
+    const follow = 1 - Math.exp(-dt / 34);
+    this.cam.x += (targetX - this.cam.x) * follow;
+    this.cam.y += (targetY - this.cam.y) * follow;
+    if (Math.abs(targetX - this.cam.x) < 0.35) this.cam.x = targetX;
+    if (Math.abs(targetY - this.cam.y) < 0.35) this.cam.y = targetY;
+
+    // 地面は 整数ピクセルに置く（タイルの継ぎ目がちらつかない）。
+    const camX = Math.round(this.cam.x);
+    const camY = Math.round(this.cam.y);
 
     ctx.fillStyle = map.kind === 'room' ? '#2b2118' : map.dark ? '#05060a' : '#12351f';
     ctx.fillRect(0, 0, this.w, this.h);
@@ -112,14 +129,14 @@ export class Scene {
     ];
     people.sort((a, b) => a.y - b.y);
     for (const p of people) {
-      const px = Math.round(p.x * tile - camX);
-      const py = Math.round(p.y * tile - camY);
+      const px = p.x * tile - camX;         // 人だけは 小数のまま置く
+      const py = p.y * tile - camY;
       if (p.monster && drawMonster(ctx, p.monster, px + tile / 2, py + tile * 0.5, tile * 1.05, this.time / 1000)) continue;
       if (p.emoji) this.#drawEmoji(p.emoji, px, py, tile * 0.72);
       else this.#drawPerson(px, py, p.look || {}, p.dir || 'down', p.frame || 0, p.small, p.down);
     }
 
-    if (map.dark) this.#drawDarkness(Math.round(hero.x * tile - camX), Math.round(hero.y * tile - camY));
+    if (map.dark) this.#drawDarkness(hero.x * tile - camX, hero.y * tile - camY);
     if (view.flash) {
       ctx.fillStyle = `rgba(255,255,255,${view.flash})`;
       ctx.fillRect(0, 0, this.w, this.h);

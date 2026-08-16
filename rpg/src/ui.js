@@ -15,7 +15,7 @@ import { Jukebox, songForMap } from './audio.js';
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'rpg:save';
 const SOUND_KEY = 'rpg:sound';
-const STEP_MS = 150;          // 1 マス歩くのにかかる時間
+const STEP_MS = 132;          // 1 マス歩くのにかかる時間
 const TYPE_MS = 22;           // 1 文字あたりの表示速度
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -264,6 +264,7 @@ function enterMap(id, x, y, dir = 'down') {
   state.moving = null;
   state.sinceBattle = 0;
   state.trail = [{ x, y, dir }, { x, y, dir }, { x, y, dir }];
+  state.scene?.resetCamera();
   refreshNpcs();
   if (map.kind !== 'room') showPlace(map.name);
   if (state.mode !== 'battle') playMapSong();
@@ -1066,38 +1067,52 @@ function update(dt) {
 
   if (state.mode !== 'field') return;
 
-  if (state.moving) {
-    state.moving.t += dt;
+  // 1 フレームぶんの時間を 使いきるまで進める。
+  // マスをまたぐ瞬間に 余った時間を 次の一歩へ持ちこすと、歩きが途切れない。
+  let left = dt;
+  for (let guard = 0; guard < 4 && left > 0; guard++) {
+    if (!state.moving && state.held) tryMove(state.held);
+    if (!state.moving) break;
+
+    state.moving.t += left;
+    const over = state.moving.t - STEP_MS;
     const p = Math.min(1, state.moving.t / STEP_MS);
     state.ox = state.moving.dx * (p - 1);
     state.oy = state.moving.dy * (p - 1);
-    if (p >= 1) {
-      const data = state.save;
-      state.trail.unshift({ x: data.x, y: data.y, dir: data.dir });
-      state.trail.length = 3;
-      data.x += state.moving.dx;
-      data.y += state.moving.dy;
-      state.ox = 0;
-      state.oy = 0;
-      state.frame = (state.frame + 1) % 2;
-      state.moving = null;
-      finishStep();
-    }
-    return;
-  }
+    if (p < 1) break;
 
-  if (state.held) tryMove(state.held);
+    const data = state.save;
+    state.trail.unshift({ x: data.x, y: data.y, dir: data.dir });
+    state.trail.length = 3;
+    data.x += state.moving.dx;
+    data.y += state.moving.dy;
+    state.ox = 0;
+    state.oy = 0;
+    state.frame = (state.frame + 1) % 2;
+    state.moving = null;
+    finishStep();
+    if (state.mode !== 'field' || state.pending) break;   // 会話・戦闘に入ったら そこで止める
+    left = Math.min(over, STEP_MS);
+  }
 }
 
 /** 隊列を 画面に出す形（座標は小数）にする。先頭が主人公。 */
 function partyOnMap() {
   const data = state.save;
   const p = state.moving ? Math.min(1, state.moving.t / STEP_MS) : 1;
+  const walking = !!state.moving;
+  const now = performance.now() / 1000;
+  // 足は 1 マスのあいだに 2 回入れかわる。止まっているときは ゆっくり呼吸。
+  const legs = (base) => (walking ? (base + (p >= 0.5 ? 1 : 0)) % 2 : base);
+  const bounce = (i) => (walking
+    ? -Math.abs(Math.sin(p * Math.PI)) * 0.05
+    : Math.sin(now * 1.8 + i * 0.9) * 0.012);
+
   const people = [{
     x: data.x + state.ox,
-    y: data.y + state.oy,
+    y: data.y + state.oy + bounce(0),
     dir: data.dir,
-    frame: state.frame,
+    frame: legs(state.frame),
     look: classById(party()[0].cls).look,
   }];
   for (let i = 1; i < party().length; i++) {
@@ -1105,9 +1120,9 @@ function partyOnMap() {
     const from = state.trail[i] || to;
     people.push({
       x: from.x + (to.x - from.x) * p,
-      y: from.y + (to.y - from.y) * p,
+      y: from.y + (to.y - from.y) * p + bounce(i),
       dir: to.dir,
-      frame: state.frame,
+      frame: legs(state.frame + i),
       look: classById(party()[i].cls).look,
       down: isDown(party()[i]),
     });
