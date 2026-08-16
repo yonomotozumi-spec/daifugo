@@ -378,6 +378,54 @@ test('JSON を通しても状態が変わらない', () => {
 
 // ------------------------------------------------------------------ 進行のバランス
 
+test('池だけで遊んでいても、すぐ次の釣り場に行ける', () => {
+  const rng = mulberry32(4242);
+  const p = createPlayer();
+  let casts = 0;
+  const river = SPOTS.find((s) => s.id === 'river');
+  while (p.money < river.price && casts < 15) {
+    casts++;
+    const result = pickFish('pond', { rng, rod: rod('nobe'), lure: lure('worm'), timeIndex: casts });
+    if (result.fish.power > rod('nobe').power + 1) continue;   // 取り込めない魚は数えない
+    sell(p, result);
+  }
+  assert.ok(p.money >= river.price, `15回釣っても渓流に行けない（${p.money}円 / ${river.price}円）`);
+});
+
+test('釣り場は 6 か所あって、値段が段階的に上がる', () => {
+  assert.equal(SPOTS.length, 6);
+  assert.deepEqual(SPOTS.map((s) => s.id), ['pond', 'river', 'harbor', 'sea', 'island', 'deep']);
+});
+
+test('魚は全部で 55 種以上いて、どの釣り場にも 7 種以上いる', () => {
+  assert.ok(FISH.length >= 55, `魚が少ない（${FISH.length} 種）`);
+  for (const spot of SPOTS) {
+    const list = fishOfSpot(spot.id);
+    assert.ok(list.length >= 7, `${spot.name}の魚が少ない（${list.length} 種）`);
+    assert.ok(list.some((f) => f.rarity === 'legendary'), `${spot.name}に伝説の魚がいない`);
+    assert.ok(list.some((f) => f.junk), `${spot.name}にゴミがない`);
+  }
+});
+
+test('奥の釣り場ほど魚の値段が高い', () => {
+  const median = (spotId) => {
+    const values = fishOfSpot(spotId).filter((f) => !f.junk).map((f) => f.value).sort((a, b) => a - b);
+    return values[Math.floor(values.length / 2)];
+  };
+  const order = SPOTS.map((s) => median(s.id));
+  for (let i = 1; i < order.length; i++) {
+    assert.ok(order[i] > order[i - 1], `${SPOTS[i].name}の魚が前の釣り場より安い（${order[i - 1]} → ${order[i]}）`);
+  }
+});
+
+test('ルアーの得意な釣り場は実在する釣り場を指している', () => {
+  for (const l of LURES) {
+    for (const id of Object.keys(l.spotBonus || {})) {
+      assert.ok(SPOTS.some((s) => s.id === id), `${l.name}: 知らない釣り場 ${id}`);
+    }
+  }
+});
+
 test('のべ竿とミミズでも池なら稼げて、最初の竿に手が届く', () => {
   const rng = mulberry32(777);
   const p = createPlayer();

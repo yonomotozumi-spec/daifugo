@@ -137,6 +137,27 @@ button, a { touch-action: manipulation; }
 
 .topbar-link:hover { background: rgba(255, 255, 255, 0.16); }
 
+/* 新しい釣り場に行けるようになったら、ショップに印をつける */
+.has-new { position: relative; border-color: rgba(247, 201, 72, 0.7); }
+
+.has-new::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px rgba(6, 40, 61, 0.9);
+  animation: newDot 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes newDot {
+  from { transform: scale(0.85); opacity: 0.7; }
+  to { transform: scale(1.15); opacity: 1; }
+}
+
 /* 絵文字 + ラベルのボタン。狭い画面ではラベルを隠して絵文字だけにする */
 .icon-btn {
   display: inline-flex;

@@ -59,9 +59,11 @@ export const timeAt = (index) => TIMES[((index % TIMES.length) + TIMES.length) %
 
 export const SPOTS = [
   { id: 'pond', name: '池', price: 0, note: 'はじまりの池。小物中心だが、たまに主が出る' },
-  { id: 'river', name: '渓流', price: 1500, note: '流れが速く、引きの強い魚が多い' },
-  { id: 'sea', name: '海', price: 9000, note: '大物の宝庫。強い竿がないと切られる' },
-  { id: 'deep', name: '深海', price: 45000, note: '見たこともない魚が眠っている' },
+  { id: 'river', name: '渓流', price: 500, note: '流れが速く、引きの強い魚が多い' },
+  { id: 'harbor', name: '漁港', price: 2500, note: '堤防から狙う。夜のほうがよく釣れる' },
+  { id: 'sea', name: '海', price: 6000, note: '大物の宝庫。強い竿がないと切られる' },
+  { id: 'island', name: '南の島', price: 16000, note: '透きとおった海。見たことのない色の魚がいる' },
+  { id: 'deep', name: '深海', price: 32000, note: '光の届かない世界。何が出るか分からない' },
 ];
 
 // ---------------------------------------------------------------- 竿
@@ -99,15 +101,15 @@ export const LURES = [
   },
   {
     id: 'minnow', name: 'ミノー', price: 3200, rarityBonus: 0.22, biteSpeed: 0.28, junkCut: 0.5,
-    spotBonus: { sea: 1.6, river: 1.2 }, note: '小魚そっくりの動き。海で本領を発揮',
+    spotBonus: { sea: 1.6, harbor: 1.5, river: 1.2 }, note: '小魚そっくりの動き。海と漁港で本領を発揮',
   },
   {
     id: 'jig', name: 'メタルジグ', price: 11000, rarityBonus: 0.34, biteSpeed: 0.34, junkCut: 0.65,
-    spotBonus: { deep: 1.8, sea: 1.3 }, note: '深く速く沈む。深海攻略の必需品',
+    spotBonus: { deep: 1.8, island: 1.4, sea: 1.3, harbor: 1.2 }, note: '深く速く沈む。深場攻略の必需品',
   },
   {
     id: 'aurora', name: 'オーロラルアー', price: 38000, rarityBonus: 0.60, biteSpeed: 0.42, junkCut: 0.85,
-    spotBonus: { pond: 1.3, river: 1.3, sea: 1.4, deep: 1.6 }, note: '七色に光り、伝説を引き寄せる',
+    spotBonus: { pond: 1.3, river: 1.3, harbor: 1.4, sea: 1.4, island: 1.5, deep: 1.6 }, note: '七色に光り、伝説を引き寄せる',
   },
 ];
 
@@ -142,18 +144,43 @@ export const FISH = [
   { id: 'ito', name: 'イトウ', emoji: '🐟', spot: 'river', rarity: 'epic', weight: [3, 22], length: [60, 150], value: 9000, power: 4, speed: 0.50, escape: 0.50, color: '#6a7f6a' },
   { id: 'kappa', name: 'カッパの皿', emoji: '🥏', spot: 'river', rarity: 'legendary', weight: [0.2, 1], length: [18, 30], value: 26000, power: 2, speed: 0.72, escape: 0.58, color: '#7fc8a9' },
 
+  // ------------------------------------------------ 漁港
+  { id: 'haze', name: 'ハゼ', emoji: '🐟', spot: 'harbor', rarity: 'common', weight: [0.02, 0.3], length: [8, 26], value: 200, power: 1, speed: 0.44, escape: 0.28, color: '#a09477' },
+  { id: 'mebaru', name: 'メバル', emoji: '🐟', spot: 'harbor', rarity: 'common', weight: [0.08, 0.9], length: [12, 33], value: 450, power: 1, speed: 0.46, escape: 0.34, color: '#6b6a75' },
+  { id: 'kasago', name: 'カサゴ', emoji: '🐡', spot: 'harbor', rarity: 'common', weight: [0.1, 1.2], length: [15, 36], value: 520, power: 2, speed: 0.36, escape: 0.38, color: '#a3524a' },
+  { id: 'bicycle', name: '沈んだ自転車', emoji: '🚲', spot: 'harbor', rarity: 'common', weight: [8, 16], length: [100, 180], value: 15, power: 2, speed: 0.06, escape: 0.12, color: '#5b6870', junk: true },
+  { id: 'kouika', name: 'コウイカ', emoji: '🦑', spot: 'harbor', rarity: 'uncommon', weight: [0.2, 2], length: [15, 42], value: 2200, power: 2, speed: 0.52, escape: 0.40, color: '#cfc3d8' },
+  { id: 'anago', name: 'アナゴ', emoji: '🐍', spot: 'harbor', rarity: 'uncommon', weight: [0.2, 1.5], length: [40, 100], value: 2800, power: 2, speed: 0.62, escape: 0.44, color: '#6b5f4e' },
+  { id: 'kurodai', name: 'クロダイ', emoji: '🐟', spot: 'harbor', rarity: 'uncommon', weight: [0.4, 4.5], length: [25, 66], value: 3000, power: 3, speed: 0.50, escape: 0.42, color: '#4f5a63' },
+  { id: 'tachiuo', name: 'タチウオ', emoji: '🗡️', spot: 'harbor', rarity: 'rare', weight: [0.3, 3.2], length: [60, 155], value: 4200, power: 3, speed: 0.64, escape: 0.46, color: '#c8cdd4' },
+  { id: 'suzuki', name: 'スズキ', emoji: '🐟', spot: 'harbor', rarity: 'rare', weight: [1, 9], length: [40, 105], value: 5200, power: 4, speed: 0.58, escape: 0.48, color: '#8d99a6' },
+  { id: 'kanpachi', name: 'カンパチ', emoji: '🐟', spot: 'harbor', rarity: 'epic', weight: [3, 25], length: [50, 130], value: 11000, power: 4, speed: 0.66, escape: 0.52, color: '#b9a05e' },
+  { id: 'kinkurodai', name: '黄金のクロダイ', emoji: '✨', spot: 'harbor', rarity: 'legendary', weight: [3, 12], length: [50, 80], value: 48000, power: 5, speed: 0.60, escape: 0.58, color: '#e8c15a' },
+
   // ------------------------------------------------ 海
-  { id: 'aji', name: 'アジ', emoji: '🐟', spot: 'sea', rarity: 'common', weight: [0.1, 0.9], length: [15, 42], value: 300, power: 1, speed: 0.44, escape: 0.32, color: '#9aa7ae' },
-  { id: 'saba', name: 'サバ', emoji: '🐟', spot: 'sea', rarity: 'common', weight: [0.3, 2.2], length: [25, 55], value: 380, power: 2, speed: 0.58, escape: 0.36, color: '#5f7d92' },
+  { id: 'aji', name: 'アジ', emoji: '🐟', spot: 'sea', rarity: 'common', weight: [0.1, 0.9], length: [15, 42], value: 520, power: 1, speed: 0.44, escape: 0.32, color: '#9aa7ae' },
+  { id: 'saba', name: 'サバ', emoji: '🐟', spot: 'sea', rarity: 'common', weight: [0.3, 2.2], length: [25, 55], value: 680, power: 2, speed: 0.58, escape: 0.36, color: '#5f7d92' },
   { id: 'bottle', name: 'ペットボトル', emoji: '🧴', spot: 'sea', rarity: 'common', weight: [0.05, 0.6], length: [20, 32], value: 10, power: 1, speed: 0.08, escape: 0.10, color: '#a8c6d6', junk: true },
-  { id: 'tai', name: 'マダイ', emoji: '🐠', spot: 'sea', rarity: 'uncommon', weight: [0.5, 6], length: [30, 88], value: 1600, power: 3, speed: 0.48, escape: 0.40, color: '#d4736f' },
-  { id: 'hirame', name: 'ヒラメ', emoji: '🐟', spot: 'sea', rarity: 'uncommon', weight: [0.6, 7], length: [30, 95], value: 1900, power: 3, speed: 0.34, escape: 0.42, color: '#8d8471' },
-  { id: 'ika', name: 'アオリイカ', emoji: '🦑', spot: 'sea', rarity: 'uncommon', weight: [0.2, 3], length: [18, 48], value: 1400, power: 2, speed: 0.62, escape: 0.38, color: '#c7b7d6' },
-  { id: 'tako', name: 'マダコ', emoji: '🐙', spot: 'sea', rarity: 'rare', weight: [0.5, 5], length: [30, 90], value: 2800, power: 3, speed: 0.30, escape: 0.50, color: '#b1596a' },
+  { id: 'tai', name: 'マダイ', emoji: '🐠', spot: 'sea', rarity: 'uncommon', weight: [0.5, 6], length: [30, 88], value: 2600, power: 3, speed: 0.48, escape: 0.40, color: '#d4736f' },
+  { id: 'hirame', name: 'ヒラメ', emoji: '🐟', spot: 'sea', rarity: 'uncommon', weight: [0.6, 7], length: [30, 95], value: 3000, power: 3, speed: 0.34, escape: 0.42, color: '#8d8471' },
+  { id: 'ika', name: 'アオリイカ', emoji: '🦑', spot: 'sea', rarity: 'uncommon', weight: [0.2, 3], length: [18, 48], value: 2400, power: 2, speed: 0.62, escape: 0.38, color: '#c7b7d6' },
+  { id: 'tako', name: 'マダコ', emoji: '🐙', spot: 'sea', rarity: 'rare', weight: [0.5, 5], length: [30, 90], value: 4000, power: 3, speed: 0.30, escape: 0.50, color: '#b1596a' },
   { id: 'buri', name: 'ブリ', emoji: '🐟', spot: 'sea', rarity: 'rare', weight: [2, 14], length: [50, 130], value: 5200, power: 4, speed: 0.60, escape: 0.44, color: '#6c8ba0' },
   { id: 'same', name: 'ホホジロザメ', emoji: '🦈', spot: 'sea', rarity: 'epic', weight: [80, 900], length: [200, 560], value: 18000, power: 5, speed: 0.46, escape: 0.54, color: '#5b6a74' },
   { id: 'manbou', name: 'マンボウ', emoji: '🐡', spot: 'sea', rarity: 'epic', weight: [40, 600], length: [120, 320], value: 15000, power: 5, speed: 0.22, escape: 0.48, color: '#93a2a8' },
   { id: 'kajiki', name: 'クロカジキ', emoji: '🗡️', spot: 'sea', rarity: 'legendary', weight: [60, 500], length: [200, 450], value: 52000, power: 5, speed: 0.70, escape: 0.60, color: '#3d5a7a' },
+
+  // ------------------------------------------------ 南の島
+  { id: 'clownfish', name: 'カクレクマノミ', emoji: '🐠', spot: 'island', rarity: 'common', weight: [0.02, 0.15], length: [4, 12], value: 1100, power: 1, speed: 0.58, escape: 0.32, color: '#f08a3c' },
+  { id: 'bannerfish', name: 'ハタタテダイ', emoji: '🐠', spot: 'island', rarity: 'common', weight: [0.05, 0.5], length: [10, 26], value: 1300, power: 1, speed: 0.52, escape: 0.34, color: '#f2e6c8' },
+  { id: 'coconut', name: 'ヤシの実', emoji: '🥥', spot: 'island', rarity: 'common', weight: [0.8, 2.5], length: [18, 30], value: 25, power: 1, speed: 0.08, escape: 0.12, color: '#8a6a45', junk: true },
+  { id: 'ise_ebi', name: 'イセエビ', emoji: '🦞', spot: 'island', rarity: 'uncommon', weight: [0.3, 2.2], length: [20, 48], value: 4600, power: 2, speed: 0.30, escape: 0.44, color: '#b8452f' },
+  { id: 'napoleon', name: 'ナポレオンフィッシュ', emoji: '🐟', spot: 'island', rarity: 'uncommon', weight: [5, 45], length: [60, 190], value: 7500, power: 4, speed: 0.40, escape: 0.44, color: '#3f8f8a' },
+  { id: 'takaragai', name: 'タカラガイ', emoji: '🐚', spot: 'island', rarity: 'rare', weight: [0.02, 0.2], length: [3, 11], value: 6800, power: 1, speed: 0.20, escape: 0.30, color: '#e6c9a8' },
+  { id: 'umigame', name: 'アオウミガメ', emoji: '🐢', spot: 'island', rarity: 'rare', weight: [20, 130], length: [60, 145], value: 9500, power: 4, speed: 0.34, escape: 0.46, color: '#4b7a52' },
+  { id: 'manta', name: 'オニイトマキエイ', emoji: '🐟', spot: 'island', rarity: 'epic', weight: [60, 600], length: [200, 520], value: 27000, power: 5, speed: 0.48, escape: 0.52, color: '#37506b' },
+  { id: 'bashoukajiki', name: 'バショウカジキ', emoji: '🗡️', spot: 'island', rarity: 'epic', weight: [25, 90], length: [180, 330], value: 31000, power: 5, speed: 0.74, escape: 0.58, color: '#2f5f8f' },
+  { id: 'jinbee', name: 'ジンベエザメ', emoji: '🦈', spot: 'island', rarity: 'legendary', weight: [300, 2000], length: [400, 1200], value: 160000, power: 5, speed: 0.44, escape: 0.60, color: '#4a6274' },
 
   // ------------------------------------------------ 深海
   { id: 'kinmedai', name: 'キンメダイ', emoji: '🐠', spot: 'deep', rarity: 'common', weight: [0.5, 4], length: [25, 60], value: 1800, power: 2, speed: 0.40, escape: 0.36, color: '#d4544a' },
@@ -162,6 +189,9 @@ export const FISH = [
   { id: 'mendako', name: 'メンダコ', emoji: '🐙', spot: 'deep', rarity: 'rare', weight: [0.05, 0.6], length: [8, 22], value: 11000, power: 2, speed: 0.44, escape: 0.46, color: '#e08fa0' },
   { id: 'daiouika', name: 'ダイオウイカ', emoji: '🦑', spot: 'deep', rarity: 'epic', weight: [50, 280], length: [300, 900], value: 34000, power: 5, speed: 0.56, escape: 0.56, color: '#a2637f' },
   { id: 'ryuuguu', name: 'リュウグウノツカイ', emoji: '🎗️', spot: 'deep', rarity: 'epic', weight: [20, 180], length: [300, 800], value: 40000, power: 4, speed: 0.64, escape: 0.58, color: '#b8c4d8' },
+  { id: 'probe', name: '壊れた探査機', emoji: '🛰️', spot: 'deep', rarity: 'common', weight: [3, 20], length: [40, 120], value: 30, power: 2, speed: 0.07, escape: 0.12, color: '#7a828c', junk: true },
+  { id: 'rabuka', name: 'ラブカ', emoji: '🦈', spot: 'deep', rarity: 'rare', weight: [8, 60], length: [100, 200], value: 14000, power: 4, speed: 0.52, escape: 0.50, color: '#4a4550' },
+  { id: 'kinka', name: '沈没船の金貨', emoji: '🪙', spot: 'deep', rarity: 'epic', weight: [0.02, 0.4], length: [3, 8], value: 38000, power: 1, speed: 0.16, escape: 0.34, color: '#e0bb54' },
   { id: 'coelacanth', name: 'シーラカンス', emoji: '🐊', spot: 'deep', rarity: 'legendary', weight: [25, 95], length: [110, 200], value: 120000, power: 5, speed: 0.50, escape: 0.62, color: '#4f6f6a' },
 ];
 

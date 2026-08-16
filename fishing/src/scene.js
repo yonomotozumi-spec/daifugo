@@ -48,9 +48,18 @@ const SPOT_STYLE = {
     depth: 0.08, ground: '#5a5a4a', bank: '#7a7a6a', ray: 0.65, weed: 4,
     tint: 'rgba(70,160,150,0.14)', current: 1, rocks: 4, gulls: 0, glow: 0,
   },
+  harbor: {
+    depth: 0.2, ground: '#3c4650', bank: '#8f9296', ray: 0.45, weed: 3,
+    tint: 'rgba(30,105,120,0.22)', current: 0.4, rocks: 3, gulls: 3, glow: 0,
+  },
   sea: {
     depth: 0.24, ground: '#2a4a5a', bank: '#8a8272', ray: 0.75, weed: 2,
     tint: 'rgba(20,70,150,0.20)', current: 0.3, rocks: 1, gulls: 4, glow: 0,
+  },
+  island: {
+    depth: 0, ground: '#ecdcb4', bank: '#e6d5a8', ray: 1, weed: 2,
+    tint: 'rgba(90,235,220,0.30)', tintBottom: 'rgba(30,190,200,0.42)',
+    current: 0.2, rocks: 2, gulls: 2, glow: 0, palms: 3,
   },
   deep: {
     depth: 0.68, ground: '#101a28', bank: '#2a3040', ray: 0.1, weed: 0,
@@ -460,6 +469,7 @@ export class Scene {
 
     this.#drawSky(pal, waterY);
     this.#drawHills(pal, style, waterY);
+    this.#drawPalms(pal, style, waterY);
     this.#drawWater(pal, style, waterY);
     this.#drawUnderwater(pal, style, waterY);
     this.#drawSurface(pal, waterY);
@@ -567,6 +577,41 @@ export class Scene {
     ctx.globalAlpha = 1;
   }
 
+  /** 遠くの岸に生えている椰子の木。南の島だと一目で分かるように。 */
+  #drawPalms(pal, style, waterY) {
+    if (!style.palms) return;
+    const { ctx, w } = this;
+    for (let i = 0; i < style.palms; i++) {
+      const x = w * (0.52 + i * 0.13);
+      const base = waterY - 8 - (i % 2) * 6;
+      const h = 46 + (i % 3) * 12;
+      const lean = Math.sin(this.t * 0.7 + i) * 3;
+      ctx.strokeStyle = 'rgba(60,45,35,0.85)';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, base);
+      ctx.quadraticCurveTo(x + 6 + lean, base - h * 0.6, x + 12 + lean * 2, base - h);
+      ctx.stroke();
+      // 葉
+      ctx.strokeStyle = 'rgba(40,110,70,0.9)';
+      ctx.lineWidth = 3.5;
+      const tipX = x + 12 + lean * 2;
+      const tipY = base - h;
+      for (let k = 0; k < 5; k++) {
+        const a = -Math.PI + (k / 4) * Math.PI;
+        const len = 20 + (k % 2) * 6;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.quadraticCurveTo(
+          tipX + Math.cos(a) * len * 0.6, tipY + Math.sin(a) * len * 0.6 - 6,
+          tipX + Math.cos(a) * len, tipY + Math.sin(a) * len * 0.5 + 6,
+        );
+        ctx.stroke();
+      }
+    }
+  }
+
   #drawWater(pal, style, waterY) {
     const { ctx, w, h } = this;
     const g = ctx.createLinearGradient(0, waterY, 0, h);
@@ -581,7 +626,14 @@ export class Scene {
       ctx.fillRect(0, waterY, w, h - waterY);
     }
     if (style.tint) {                      // 釣り場ごとの水の色
-      ctx.fillStyle = style.tint;
+      if (style.tintBottom) {
+        const t = ctx.createLinearGradient(0, waterY, 0, h);
+        t.addColorStop(0, style.tint);
+        t.addColorStop(1, style.tintBottom);
+        ctx.fillStyle = t;
+      } else {
+        ctx.fillStyle = style.tint;
+      }
       ctx.fillRect(0, waterY, w, h - waterY);
     }
 
