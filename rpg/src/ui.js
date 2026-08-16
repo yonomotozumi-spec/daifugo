@@ -3,7 +3,7 @@
 import {
   Battle, PARTY_LIMIT, addItem, allGearById, buy, claimReward, classById, createSave,
   hasItem, innCost, isDown, itemById, itemList, joinParty, leaderOf, normalizeSave, onDefeat,
-  sell, sellPrice, spellsOf, statsOf, stayInn, targetsAlly, useItem, weightedPick,
+  removeItem, sell, sellPrice, spellsOf, statsOf, stayInn, targetsAlly, useItem, weightedPick,
 } from './engine.js';
 import {
   SHOPS, canWalk, chestAt, encounterChance, encountersAt, frontOf,
@@ -235,7 +235,7 @@ function showSheet(title, rows) {
 function refreshNpcs() {
   const flags = state.save.flags;
   state.npcs = state.map.npcs
-    .filter((n) => !(n.kind === 'boss' && flags.bossDead))
+    .filter((n) => !(n.kind === 'boss' && flags[n.defeatFlag || 'bossDead']))
     .filter((n) => !(n.kind === 'join' && flags[`join:${n.id}`]))
     .map((n) => ({ ...n, dir: n.dir || 'down', frame: 0 }));
 }
@@ -353,6 +353,7 @@ async function talkTo(npc) {
       case 'save': await scribe(npc); break;
       case 'elder': await elder(npc); break;
       case 'join': await recruit(npc); break;
+      case 'altar': await altar(npc); break;
       case 'boss': await boss(npc); break;
       default: await sayAll(npc.lines);
     }
@@ -434,11 +435,43 @@ async function recruit(npc) {
   }
 }
 
-/** 玉座の魔王。話しかけると 最後の戦いが始まる。 */
+/** 立ちふさがる敵。話しかけると 戦いが始まる。勝つと ごほうびが手に入る。 */
 async function boss(npc) {
+  const data = state.save;
   await sayAll(npc.lines);
   hideMessage();
-  await startBattle(npc.monster);
+  const result = await startBattle(npc.monster);
+  if (result !== 'win') return;
+
+  data.flags[npc.defeatFlag || 'bossDead'] = true;
+  if (npc.onWin) {
+    if (npc.onWin.item) addItem(data, npc.onWin.item);
+    await sayAll(npc.onWin.lines || []);
+  }
+  refreshNpcs();
+  renderHud();
+  save();
+}
+
+/** 灯台のような「品物を合わせる」場所。 */
+async function altar(npc) {
+  const data = state.save;
+  if (hasItem(data, npc.gives) || data.flags[`altar:${npc.id}`]) {
+    await sayAll(npc.doneLines || npc.waitLines);
+    return;
+  }
+  if (!npc.needs.every((id) => hasItem(data, id))) {
+    await sayAll(npc.waitLines);
+    return;
+  }
+  await sayAll(npc.readyLines || []);
+  for (const id of npc.needs) removeItem(data, id);
+  addItem(data, npc.gives);
+  data.flags[`altar:${npc.id}`] = true;
+  state.flash = 1;
+  await sayAll(npc.giveLines || []);
+  renderHud();
+  save();
 }
 
 async function scribe(npc) {
@@ -572,7 +605,7 @@ async function showStatus() {
 
 /**
  * 道具を使う。戦闘中は選んだ行動（{type:'item', id, target}）を返す。
- * フィールドでは、ルーラなどで場面が変わったときだけ true を返す。
+ * フィールドでは、リターナなどで場面が変わったときだけ true を返す。
  */
 async function useItemMenu(where, actor = null) {
   const data = state.save;
@@ -643,7 +676,7 @@ async function castMenu(where, actor = null) {
 
   if (where === 'battle') return { type: 'spell', id, target };
 
-  // フィールドでの回復・蘇生・ルーラ
+  // フィールドでの回復・蘇生・帰還
   caster.mp -= spell.mp;
   await say(`${caster.name}は ${spell.name}を となえた！`);
   if (spell.kind === 'heal') {
@@ -709,7 +742,9 @@ async function startBattle(monsterId) {
     await playLines(battle.resolve(actions));
   }
 
+  const result = battle.result;
   await endBattle();
+  return result;
 }
 
 function renderEnemy() {
@@ -793,7 +828,7 @@ async function endBattle() {
       await say(`${up.member.name}は レベル ${up.level} に あがった！`);
       for (const spell of up.spells) await say(`${up.member.name}は ${spell.name}の 呪文を おぼえた！`);
     }
-    if (battle.monster.boss) { await ending(); return; }
+    if (battle.monster.final) { await ending(); return; }
   } else if (battle.result === 'lose') {
     await say('……');
     const { lost } = onDefeat(data);
@@ -828,11 +863,12 @@ async function ending() {
 
   const names = party().map((m) => m.name);
   await sayAll([
-    'まおう ダークロードは 光の中に 消えていった……',
+    'まおう ザルガスは 星の光の中に 消えていった……',
     '長かった 闇の夜が 明け\n世界に 朝が もどってきた。',
-    `${names.join('と ')}は\n村へと 帰っていった。`,
+    '港の 灯台には ふたたび 灯りがともり\n船は 海へ こぎ出していく。',
+    `${names.join('と ')}は\n夜明けの 村へと 帰っていった。`,
     'ゆうしゃたちの ぼうけんは ここで おしまい。\nでも 旅は まだまだ 続けられる。',
-    '━━ ひかりのつるぎ  かんぜんクリア ━━\n遊んでくれて ありがとう！',
+    '━━ よあけのつるぎ  かんぜんクリア ━━\n遊んでくれて ありがとう！',
   ]);
 
   closeBattle();
@@ -1045,7 +1081,7 @@ function startGame(data) {
     data.flags.opening = true;
     runFlow(async () => {
       await sayAll([
-        'まおう ダークロードが よみがえり\n世界は 闇に つつまれた。',
+        'まおう ザルガスが よみがえり\n世界は 闇に つつまれた。',
         `${leader().name}よ。\nまずは ちょうろうの家を たずねるのじゃ。`,
         'ひとりでは 心ぼそい。\n旅の仲間を さがすのじゃぞ……',
       ]);

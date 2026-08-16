@@ -1,5 +1,5 @@
 /**
- * RPG「ひかりのつるぎ」のルールエンジン。
+ * RPG「よあけのつるぎ」のルールエンジン。
  * DOM に依存しないので、ブラウザと Node の両方から読み込める。
  * マップは world.js、描画は scene.js、画面まわりは ui.js に任せる。
  *
@@ -89,16 +89,16 @@ export const expForLevel = (level) => levelRow(level).exp;
 // ---------------------------------------------------------------- 呪文
 
 export const SPELLS = [
-  { id: 'hoimi', name: 'ホイミ', mp: 4, kind: 'heal', power: [28, 38], field: true, desc: 'HP を 30 ほど回復する' },
-  { id: 'gira', name: 'ギラ', mp: 5, kind: 'attack', power: [16, 24], field: false, desc: '炎で 20 ほどのダメージ' },
-  { id: 'rarihoo', name: 'ラリホー', mp: 6, kind: 'sleep', field: false, desc: '魔物を 眠らせる' },
-  { id: 'rura', name: 'ルーラ', mp: 6, kind: 'warp', field: true, desc: 'はじまりの村へ飛んで帰る' },
-  { id: 'behoimi', name: 'ベホイミ', mp: 8, kind: 'heal', power: [78, 98], field: true, desc: 'HP を 85 ほど回復する' },
-  { id: 'begirama', name: 'ベギラマ', mp: 9, kind: 'attack', power: [40, 54], field: false, desc: '大きな炎で 45 ほどのダメージ' },
-  { id: 'baikiruto', name: 'バイキルト', mp: 10, kind: 'buff', field: false, desc: '仲間ひとりの攻撃力を上げる' },
-  { id: 'zaoral', name: 'ザオラル', mp: 12, kind: 'revive', field: true, desc: '死んだ仲間を 生き返らせる（不確実）' },
-  { id: 'behoma', name: 'ベホマ', mp: 14, kind: 'heal', power: 'full', field: true, desc: 'HP を全回復する' },
-  { id: 'ionazun', name: 'イオナズン', mp: 20, kind: 'attack', power: [90, 120], field: false, desc: '爆裂で 100 ほどのダメージ' },
+  { id: 'rika', name: 'リカ', mp: 4, kind: 'heal', power: [28, 38], field: true, desc: 'HP を 30 ほど回復する' },
+  { id: 'flam', name: 'フラム', mp: 5, kind: 'attack', power: [16, 24], field: false, desc: '炎で 20 ほどのダメージ' },
+  { id: 'somna', name: 'ソムナ', mp: 6, kind: 'sleep', field: false, desc: '魔物を 眠らせる' },
+  { id: 'returna', name: 'リターナ', mp: 6, kind: 'warp', field: true, desc: 'はじまりの村へ飛んで帰る' },
+  { id: 'rikara', name: 'リカラ', mp: 8, kind: 'heal', power: [78, 98], field: true, desc: 'HP を 85 ほど回復する' },
+  { id: 'flamra', name: 'フラムラ', mp: 9, kind: 'attack', power: [40, 54], field: false, desc: '大きな炎で 45 ほどのダメージ' },
+  { id: 'brave', name: 'ブレイヴ', mp: 10, kind: 'buff', field: false, desc: '仲間ひとりの攻撃力を上げる' },
+  { id: 'revina', name: 'リヴィナ', mp: 12, kind: 'revive', field: true, desc: '倒れた仲間を 起こす（不確実）' },
+  { id: 'rikada', name: 'リカダ', mp: 14, kind: 'heal', power: 'full', field: true, desc: 'HP を全回復する' },
+  { id: 'flamda', name: 'フラムダ', mp: 20, kind: 'attack', power: [90, 120], field: false, desc: '大爆炎で 100 ほどのダメージ' },
 ];
 
 export const spellById = (id) => SPELLS.find((s) => s.id === id) || null;
@@ -116,7 +116,7 @@ export const CLASSES = {
   hero: {
     id: 'hero', name: 'ゆうしゃ', hp: 1, mp: 1, str: 1, agi: 1,
     look: { cloth: '#3f8bff', hair: '#f6b93b', hero: true },
-    spells: { 3: ['hoimi'], 4: ['gira'], 6: ['rura'], 8: ['behoimi'], 10: ['begirama'], 12: ['baikiruto'], 15: ['behoma'], 18: ['ionazun'] },
+    spells: { 3: ['rika'], 4: ['flam'], 6: ['returna'], 8: ['rikara'], 10: ['flamra'], 12: ['brave'], 15: ['rikada'], 18: ['flamda'] },
   },
   warrior: {
     id: 'warrior', name: 'せんし', hp: 1.32, mp: 0, str: 1.22, agi: 0.85,
@@ -126,12 +126,12 @@ export const CLASSES = {
   priest: {
     id: 'priest', name: 'そうりょ', hp: 0.86, mp: 1.35, str: 0.72, agi: 0.95, mpMin: 8,
     look: { cloth: '#f1f3f5', hair: '#8d6e63' },
-    spells: { 1: ['hoimi'], 5: ['behoimi'], 9: ['zaoral'], 13: ['behoma'], 16: ['baikiruto'] },
+    spells: { 1: ['rika'], 5: ['rikara'], 9: ['revina'], 13: ['rikada'], 16: ['brave'] },
   },
   mage: {
     id: 'mage', name: 'まほうつかい', hp: 0.64, mp: 1.65, str: 0.6, agi: 1.1, mpMin: 10,
     look: { cloth: '#9775fa', hair: '#343a40' },
-    spells: { 1: ['gira'], 3: ['rarihoo'], 7: ['begirama'], 11: ['baikiruto'], 15: ['ionazun'] },
+    spells: { 1: ['flam'], 3: ['somna'], 7: ['flamra'], 11: ['brave'], 15: ['flamda'] },
   },
 };
 
@@ -142,13 +142,15 @@ export const PARTY_LIMIT = 4;
 // ---------------------------------------------------------------- 道具
 
 export const ITEMS = [
-  { id: 'herb', name: 'やくそう', price: 24, kind: 'heal', power: 34, field: true, battle: true, ally: true, desc: 'HP を 34 ほど回復する' },
-  { id: 'water', name: 'まほうのせいすい', price: 78, kind: 'mp', power: 26, field: true, battle: true, ally: true, desc: 'MP を 26 回復する' },
-  { id: 'wing', name: 'キメラのつばさ', price: 36, kind: 'warp', field: true, battle: false, desc: 'はじまりの村へ帰る' },
-  { id: 'seedStr', name: 'ちからのたね', price: 0, kind: 'seedStr', power: 5, field: true, battle: false, ally: true, desc: 'ちからが永久に上がる' },
-  { id: 'seedHp', name: 'いのちのきのみ', price: 0, kind: 'seedHp', power: 15, field: true, battle: false, ally: true, desc: '最大 HP が永久に上がる' },
-  { id: 'leaf', name: 'せかいじゅのは', price: 0, kind: 'revive', field: true, battle: true, ally: true, desc: '死んだ仲間を 生き返らせる' },
-  { id: 'orb', name: 'ひかりのたま', price: 0, kind: 'key', field: false, battle: false, desc: '魔王の城の結界を破るという宝玉' },
+  { id: 'herb', name: 'いやしそう', price: 24, kind: 'heal', power: 34, field: true, battle: true, ally: true, desc: 'HP を 34 ほど回復する' },
+  { id: 'mana', name: 'マナのしずく', price: 78, kind: 'mp', power: 26, field: true, battle: true, ally: true, desc: 'MP を 26 回復する' },
+  { id: 'feather', name: 'かえりの羽根', price: 36, kind: 'warp', field: true, battle: false, desc: 'はじまりの村へ帰る' },
+  { id: 'seedStr', name: '剛力の実', price: 0, kind: 'seedStr', power: 5, field: true, battle: false, ally: true, desc: 'ちからが永久に上がる' },
+  { id: 'seedHp', name: '生命の実', price: 0, kind: 'seedHp', power: 15, field: true, battle: false, ally: true, desc: '最大 HP が永久に上がる' },
+  { id: 'flower', name: 'よみがえりの花', price: 0, kind: 'revive', field: true, battle: true, ally: true, desc: '倒れた仲間を 起こす' },
+  { id: 'shardA', name: 'よあけの欠片', price: 0, kind: 'key', field: false, battle: false, desc: '星のしずく を なす ふたつの欠片のひとつ' },
+  { id: 'shardB', name: 'よいやみの欠片', price: 0, kind: 'key', field: false, battle: false, desc: '星のしずく を なす ふたつの欠片のひとつ' },
+  { id: 'star', name: '星のしずく', price: 0, kind: 'key', field: false, battle: false, desc: '結界を 打ち破るという 星のかけら' },
 ];
 
 export const itemById = (id) => ITEMS.find((i) => i.id === id) || null;
@@ -159,29 +161,29 @@ export const sellPrice = (id) => Math.floor((itemById(id)?.price || 0) / 2);
 // ---------------------------------------------------------------- 装備
 
 export const WEAPONS = [
-  { id: 'none', name: 'そぼくなこぶし', price: 0, atk: 0 },
-  { id: 'stick', name: 'ひのきのぼう', price: 20, atk: 3 },
-  { id: 'copper', name: 'どうのつるぎ', price: 140, atk: 12 },
-  { id: 'steel', name: 'はがねのつるぎ', price: 720, atk: 26 },
-  { id: 'flame', name: 'ほのおのつるぎ', price: 2600, atk: 42 },
-  { id: 'light', name: 'ひかりのつるぎ', price: 0, atk: 58 },
+  { id: 'none', name: 'すで', price: 0, atk: 0 },
+  { id: 'stick', name: 'かしの棒', price: 20, atk: 3 },
+  { id: 'copper', name: 'あおがねの剣', price: 140, atk: 12 },
+  { id: 'steel', name: 'くろがねの剣', price: 720, atk: 26 },
+  { id: 'flame', name: 'ほむらの剣', price: 2600, atk: 42 },
+  { id: 'light', name: 'よあけの剣', price: 0, atk: 58 },
 ];
 
 export const ARMORS = [
-  { id: 'none', name: 'ただのふく', price: 0, def: 0 },
-  { id: 'clothes', name: 'たびびとのふく', price: 30, def: 3 },
-  { id: 'leather', name: 'かわのよろい', price: 180, def: 8 },
-  { id: 'chain', name: 'くさりかたびら', price: 480, def: 14 },
-  { id: 'iron', name: 'てつのよろい', price: 1200, def: 22 },
-  { id: 'magic', name: 'まほうのよろい', price: 3000, def: 32 },
-  { id: 'lightArmor', name: 'ひかりのよろい', price: 0, def: 42 },
+  { id: 'none', name: 'あさの服', price: 0, def: 0 },
+  { id: 'clothes', name: '旅装束', price: 30, def: 3 },
+  { id: 'leather', name: '革の胸あて', price: 180, def: 8 },
+  { id: 'chain', name: '鎖の鎧', price: 480, def: 14 },
+  { id: 'iron', name: 'くろがねの鎧', price: 1200, def: 22 },
+  { id: 'magic', name: '魔よけの鎧', price: 3000, def: 32 },
+  { id: 'lightArmor', name: 'よあけの鎧', price: 0, def: 42 },
 ];
 
 export const SHIELDS = [
   { id: 'none', name: 'なし', price: 0, def: 0 },
-  { id: 'leatherShield', name: 'かわのたて', price: 110, def: 5 },
-  { id: 'ironShield', name: 'てつのたて', price: 620, def: 12 },
-  { id: 'mirrorShield', name: 'みかがみのたて', price: 2400, def: 22 },
+  { id: 'leatherShield', name: '木の盾', price: 110, def: 5 },
+  { id: 'ironShield', name: 'くろがねの盾', price: 620, def: 12 },
+  { id: 'mirrorShield', name: '銀鏡の盾', price: 2400, def: 22 },
 ];
 
 /** 装備の種類。slot は仲間 1 人のデータのキーでもある。 */
@@ -349,7 +351,7 @@ export function gainExp(member, amount) {
     gained.push({ level, spells: (cls.spells[level] || []).map(spellById) });
   }
   if (gained.length) {
-    // ドラクエと同じで、レベルが上がると上がった分だけ HP / MP も増える。
+    // レベルが上がると 増えたぶんだけ HP / MP も増える。
     const beforeRow = levelRow(before);
     const beforeHp = Math.round(beforeRow.hp * cls.hp) + (member.bonusHp || 0);
     const beforeMp = cls.mp === 0 ? 0 : Math.max(beforeRow.mp > 0 ? cls.mpMin || 0 : 0, Math.round(beforeRow.mp * cls.mp));
@@ -432,7 +434,7 @@ export function useItem(save, id, target = leaderOf(save), where = 'field', rng 
   if (!item || !hasItem(save, id)) return { ok: false, text: 'その道具は持っていない。' };
   if (where === 'battle' && !item.battle) return { ok: false, text: `${item.name}は 戦いの中では使えない！` };
   if (where === 'field' && !item.field) return { ok: false, text: `${item.name}は いま使ってもなにも起きない。` };
-  if (item.ally && item.kind !== 'revive' && isDown(target)) return { ok: false, text: `${target.name}は 死んでいる。` };
+  if (item.ally && item.kind !== 'revive' && isDown(target)) return { ok: false, text: `${target.name}は 倒れている。` };
 
   const s = statsOf(target);
   switch (item.kind) {
@@ -529,18 +531,23 @@ export function stayInn(save) {
  */
 export const MONSTERS = [
   {
-    id: 'slime', name: 'スライム', emoji: '🟢', color: '#4dd07a',
+    id: 'slime', name: 'ぷるん', emoji: '🟢', color: '#4dd07a',
     hp: 13, atk: 6, def: 3, agi: 4, exp: 3, gold: 6, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
-    id: 'rat', name: 'おおねずみ', emoji: '🐀', color: '#b39d86',
+    id: 'rat', name: 'どぶネズミ', emoji: '🐀', color: '#b39d86',
     hp: 22, atk: 9, def: 5, agi: 10, exp: 6, gold: 9, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
-    id: 'bee', name: 'キラービー', emoji: '🐝', color: '#ffd43b',
+    id: 'bee', name: 'あばれバチ', emoji: '🐝', color: '#ffd43b',
     hp: 30, atk: 13, def: 7, agi: 18, exp: 10, gold: 13, resist: 0,
+    actions: [{ kind: 'attack', w: 100 }],
+  },
+  {
+    id: 'frog', name: 'どくガエル', emoji: '🐸', color: '#74b816',
+    hp: 40, atk: 16, def: 9, agi: 8, exp: 12, gold: 15, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
@@ -549,22 +556,32 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
-    id: 'wolf', name: 'あばれオオカミ', emoji: '🐺', color: '#9aa5b1',
+    id: 'wolf', name: 'はぐれオオカミ', emoji: '🐺', color: '#9aa5b1',
     hp: 82, atk: 33, def: 16, agi: 16, exp: 26, gold: 28, resist: 0, acts: 2,
     actions: [{ kind: 'attack', w: 88 }, { kind: 'sleep', w: 12 }],
   },
   {
-    id: 'mage', name: 'まどうし', emoji: '🧙', color: '#b197fc',
-    hp: 66, atk: 22, def: 14, agi: 14, exp: 32, gold: 42, resist: 0.3,
-    actions: [{ kind: 'attack', w: 45 }, { kind: 'spell', id: 'gira', w: 40 }, { kind: 'heal', power: 40, w: 15 }],
+    id: 'bat', name: 'よろいコウモリ', emoji: '🦇', color: '#868e96',
+    hp: 70, atk: 30, def: 18, agi: 26, exp: 29, gold: 34, resist: 0, acts: 2,
+    actions: [{ kind: 'attack', w: 100 }],
   },
   {
-    id: 'armor', name: 'さまようよろい', emoji: '🛡️', color: '#adb5bd',
+    id: 'mage', name: 'くろローブ', emoji: '🧙', color: '#b197fc',
+    hp: 66, atk: 22, def: 14, agi: 14, exp: 32, gold: 42, resist: 0.3,
+    actions: [{ kind: 'attack', w: 45 }, { kind: 'spell', id: 'flam', w: 40 }, { kind: 'heal', power: 40, w: 15 }],
+  },
+  {
+    id: 'armor', name: 'うごく鎧', emoji: '🛡️', color: '#adb5bd',
     hp: 110, atk: 38, def: 28, agi: 10, exp: 40, gold: 48, resist: 0.1,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
-    id: 'skeleton', name: 'がいこつ剣士', emoji: '💀', color: '#dee2e6',
+    id: 'worm', name: 'いわむし', emoji: '🪱', color: '#c0a080',
+    hp: 130, atk: 42, def: 34, agi: 8, exp: 52, gold: 60, resist: 0.25,
+    actions: [{ kind: 'attack', w: 82 }, { kind: 'breath', power: [20, 28], w: 18 }],
+  },
+  {
+    id: 'skeleton', name: 'ほねの剣士', emoji: '💀', color: '#dee2e6',
     hp: 145, atk: 48, def: 30, agi: 16, exp: 65, gold: 75, resist: 0.1, acts: 2,
     actions: [{ kind: 'attack', w: 85 }, { kind: 'sleep', w: 15 }],
   },
@@ -574,22 +591,22 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 75 }, { kind: 'breath', power: [24, 34], w: 25 }],
   },
   {
-    id: 'golem', name: 'ゴーレム', emoji: '🗿', color: '#8d99ae',
+    id: 'golem', name: '岩人形', emoji: '🗿', color: '#8d99ae',
     hp: 280, atk: 70, def: 50, agi: 6, exp: 135, gold: 165, resist: 0.15,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
-    id: 'witch', name: 'まじょ', emoji: '🧟', color: '#da77f2',
+    id: 'witch', name: '沼の魔女', emoji: '🧟', color: '#da77f2',
     hp: 195, atk: 48, def: 36, agi: 22, exp: 145, gold: 175, resist: 0.4, acts: 2,
     actions: [
       { kind: 'attack', w: 35 },
-      { kind: 'spell', id: 'begirama', w: 35 },
+      { kind: 'spell', id: 'flamra', w: 35 },
       { kind: 'heal', power: 90, w: 15 },
       { kind: 'sleep', w: 15 },
     ],
   },
   {
-    id: 'knight', name: 'あくまのきし', emoji: '😈', color: '#f06595',
+    id: 'knight', name: 'やみの騎兵', emoji: '😈', color: '#f06595',
     hp: 320, atk: 74, def: 54, agi: 24, exp: 210, gold: 240, resist: 0.2, acts: 2,
     actions: [{ kind: 'attack', w: 80 }, { kind: 'breath', power: [30, 42], w: 20 }],
   },
@@ -599,12 +616,21 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 60 }, { kind: 'breath', power: [42, 58], w: 40 }],
   },
   {
-    id: 'darklord', name: 'まおう ダークロード', emoji: '👹', color: '#ff6b6b',
-    hp: 1600, atk: 114, def: 66, agi: 26, exp: 0, gold: 0, resist: 0.35, boss: true, acts: 3,
+    id: 'gald', name: 'やみの将 ガルド', emoji: '🗡️', color: '#ffa8a8',
+    hp: 700, atk: 62, def: 44, agi: 20, exp: 420, gold: 520, resist: 0.25, boss: true, acts: 2,
+    actions: [
+      { kind: 'attack', w: 60 },
+      { kind: 'breath', power: [26, 38], w: 25 },
+      { kind: 'heal', power: 70, w: 15 },
+    ],
+  },
+  {
+    id: 'darklord', name: 'まおう ザルガス', emoji: '👹', color: '#ff6b6b',
+    hp: 1600, atk: 114, def: 66, agi: 26, exp: 0, gold: 0, resist: 0.35, boss: true, final: true, acts: 3,
     actions: [
       { kind: 'attack', w: 40 },
       { kind: 'breath', power: [52, 70], w: 25 },
-      { kind: 'spell', id: 'begirama', w: 15 },
+      { kind: 'spell', id: 'flamra', w: 15 },
       { kind: 'heal', power: 90, w: 10 },
       { kind: 'sleep', w: 10 },
     ],
@@ -622,7 +648,8 @@ export function attackDamage(atk, def, rng = Math.random) {
   return Math.max(1, Math.round(base * (0.4 + rng() * 0.4)));
 }
 
-/** かいしんのいちげきは守備力を無視する。 */
+/** するどい一撃は 守備力を無視する。 */
+/** するどい一撃の出る確率。 */
 export const CRITICAL_RATE = 1 / 24;
 
 export const criticalDamage = (atk, rng = Math.random) => Math.max(1, Math.round(atk * (0.95 + rng() * 0.35)));
@@ -655,7 +682,7 @@ export class Battle {
     this.reward = { exp: 0, gold: 0 };
     this.turn = 0;
     this.sleep = new Map();    // 眠っている仲間 → 残りターン
-    this.buff = new Set();     // バイキルト中の仲間
+    this.buff = new Set();     // ブレイヴ中の仲間
     this.monsterSleep = 0;
   }
 
@@ -719,7 +746,7 @@ export class Battle {
     const fastest = Math.max(...alive(this.party).map((m) => statsOf(m).agi));
     const chance = clamp(0.45 + (fastest - this.monster.agi) / 90, 0.15, 0.92);
     if (this.rng() < chance) this.result = 'escaped';
-    else lines.push({ text: 'しかし まわりこまれてしまった！', fx: 'fail' });
+    else lines.push({ text: 'しかし 追いつかれてしまった！', fx: 'fail' });
     return lines;
   }
 
@@ -754,7 +781,7 @@ export class Battle {
 
     // たたかう
     if (this.rng() < CRITICAL_RATE) {
-      lines.push({ text: `${member.name}の こうげき！\nかいしんの いちげき！！`, fx: 'critical' });
+      lines.push({ text: `${member.name}の こうげき！\nするどい 一撃！！`, fx: 'critical' });
       return [...lines, ...this.#hurtMonster(criticalDamage(this.atkOf(member), this.rng))];
     }
     lines.push({ text: `${member.name}の こうげき！`, fx: 'swing' });
@@ -772,7 +799,7 @@ export class Battle {
       case 'attack':
         return this.#hurtMonster(spellDamage(spell.power, this.monster.resist, this.rng));
       case 'heal': {
-        if (isDown(target)) return [{ text: `しかし ${target.name}は 死んでいる。`, fx: 'fail' }];
+        if (isDown(target)) return [{ text: `しかし ${target.name}は 倒れている。`, fx: 'fail' }];
         const s = statsOf(target);
         const heal = spell.power === 'full'
           ? s.maxHp - target.hp
@@ -843,11 +870,11 @@ export class Battle {
 
     if (act.kind === 'heal') {
       monster.hp = Math.min(monster.maxHp, monster.hp + act.power);
-      return [{ text: `${monster.name}は ホイミを となえた！\n${monster.name}の HP が 回復した。`, fx: 'heal-monster' }];
+      return [{ text: `${monster.name}は リカを となえた！\n${monster.name}の HP が 回復した。`, fx: 'heal-monster' }];
     }
 
     if (act.kind === 'sleep') {
-      lines.push({ text: `${monster.name}は ラリホーを となえた！`, fx: 'cast' });
+      lines.push({ text: `${monster.name}は ソムナを となえた！`, fx: 'cast' });
       if (this.sleep.get(target) > 0 || this.rng() < 0.35) {
         lines.push({ text: 'しかし 効かなかった！', fx: 'fail' });
       } else {
@@ -889,7 +916,7 @@ export class Battle {
     if (target.hp <= 0) {
       this.sleep.delete(target);
       this.buff.delete(target);
-      lines.push({ text: `${target.name}は 死んでしまった！`, fx: 'dead' });
+      lines.push({ text: `${target.name}は たおれてしまった！`, fx: 'dead' });
       if (!alive(this.party).length) {
         this.result = 'lose';
         lines.push({ text: 'パーティは 全滅した……', fx: 'wipe' });
@@ -914,7 +941,7 @@ export function claimReward(save, battle) {
   return { exp, gold, levels };
 }
 
-/** 全滅したときの処理。ドラクエと同じで、所持金が半分になって村に戻る。 */
+/** 全滅したときの処理。所持金が半分になって 村で目を覚ます。 */
 export function onDefeat(save) {
   const lost = Math.floor(save.gold / 2);
   save.gold -= lost;

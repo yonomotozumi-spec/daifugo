@@ -100,11 +100,11 @@ await clearMessages(4);
 await shot('03-shop');
 await page.keyboard.press('Enter');                   // かう
 await page.waitForTimeout(200);
-await page.keyboard.press('Enter');                   // やくそう
+await page.keyboard.press('Enter');                   // いやしそう
 await page.waitForTimeout(300);
 await clearMessages(4);
 const afterBuy = await game();
-ok('やくそうを 買えた', afterBuy.items.herb === before.items.herb + 1 && afterBuy.gold < before.gold);
+ok('いやしそうを 買えた', afterBuy.items.herb === before.items.herb + 1 && afterBuy.gold < before.gold);
 
 // メニューを閉じて店を出る
 for (let i = 0; i < 6 && (await mode()) !== 'field'; i++) {
@@ -171,7 +171,7 @@ await page.evaluate(() => window.rpg.encounter('slime'));
 await page.waitForTimeout(600);
 await fight('attack');
 const won = await game();
-ok('スライムに 勝って 全員が経験値をもらえた', won.party.every((m) => m.exp > 100));
+ok('ぷるんに 勝って 全員が経験値をもらえた', won.party.every((m) => m.exp > 100));
 await shot('06-after-battle');
 
 // ---------------------------------------------------------------- ほらあな・城
@@ -188,24 +188,77 @@ await page.evaluate(() => {
 await page.waitForTimeout(400);
 await shot('08-castle');
 
+// ---------------------------------------------------------------- みなとまち と 灯台
+
+await page.evaluate(() => window.rpg.teleport('port', 11, 14));
+await page.waitForTimeout(400);
+ok('みなとまち サーラ に 着いた', (await game()).map === 'port');
+await shot('07b-port');
+
+await page.evaluate(() => window.rpg.teleport('lighthouse', 4, 3));
+await page.waitForTimeout(250);
+await page.keyboard.press('ArrowUp');
+await page.waitForTimeout(200);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+await clearMessages(8);
+ok('欠片が そろわないと 灯台では 何も起きない', (await game()).items.star === undefined);
+
+// ---------------------------------------------------------------- 廃坑の中ボス
+
+await page.evaluate(() => {
+  for (const m of window.rpg.party) { m.exp = 2050; m.weapon = 'flame'; m.armor = 'iron'; m.bonusStr = 120; m.hp = 999; }
+  window.rpg.teleport('mine', 11, 2);
+});
+await page.waitForTimeout(400);
+await shot('07c-mine');
+await page.keyboard.press('ArrowUp');                 // やみの将を向く
+await page.waitForTimeout(200);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+for (let i = 0; i < 20 && (await mode()) !== 'battle'; i++) {   // 前口上
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+}
+await shot('07d-midboss');
+await fight('attack');
+await clearMessages(12);
+ok('やみの将を たおして 欠片を 手に入れた', (await game()).items.shardB === 1);
+
+// ---------------------------------------------------------------- 灯台で 欠片を合わせる
+
+await page.evaluate(() => {
+  window.rpg.save.items.shardA = 1;
+  window.rpg.teleport('lighthouse', 4, 3);
+});
+await page.waitForTimeout(300);
+await page.keyboard.press('ArrowUp');
+await page.waitForTimeout(200);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+await clearMessages(12);
+const merged = await game();
+ok('ふたつの欠片が 星のしずくに なった', merged.items.star === 1 && !merged.items.shardA && !merged.items.shardB);
+await shot('07e-star');
+
 // ---------------------------------------------------------------- 結界とラスボス
 
 await page.evaluate(() => {
-  window.rpg.save.items = { herb: 6 };            // ひかりのたま は まだ持っていない
+  window.rpg.save.items = { herb: 6 };            // 星のしずく は まだ持っていない
   window.rpg.teleport('world', 18, 3);
 });
 await page.waitForTimeout(300);
 await walk('up', 1);
 await page.waitForTimeout(400);
-ok('たまが無いと 結界に はじかれる', (await game()).map === 'world');
+ok('しずくが無いと 結界に はじかれる', (await game()).map === 'world');
 await shot('09-barrier');
 await clearMessages(4);
 
-await page.evaluate(() => { window.rpg.save.items.orb = 1; });
+await page.evaluate(() => { window.rpg.save.items.star = 1; });
 await walk('up', 1);
 await page.waitForTimeout(400);
 await clearMessages(4);
-ok('ひかりのたまで 結界が破れる', (await game()).map === 'castle');
+ok('星のしずくで 結界が破れる', (await game()).map === 'castle');
 
 // 玉座の魔王に 話しかけて 最後の戦い（演出の確認なので 主人公は思いきり強くしておく）
 await page.evaluate(() => {

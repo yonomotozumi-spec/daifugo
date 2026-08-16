@@ -96,7 +96,7 @@ test('職業には それぞれ 役わりがある', () => {
   assert.equal(warrior.mp, 0, 'せんしが 呪文を つかえてしまう');
   assert.ok(priest.mp > hero.mp && priest.hp < hero.hp, 'そうりょの MP が 多くない');
   assert.ok(mage.mp > priest.mp && mage.hp < priest.hp, 'まほうつかいが 打たれ強すぎる');
-  assert.ok(Object.values(priest.spells).flat().includes('zaoral'), 'そうりょが 蘇生を おぼえない');
+  assert.ok(Object.values(priest.spells).flat().includes('revina'), 'そうりょが 蘇生を おぼえない');
 });
 
 test('店の品ぞろえはすべて実在して、値段がついている', () => {
@@ -141,7 +141,11 @@ test('宝箱の ID は世界でただひとつ', () => {
 });
 
 test('マップの行ける場所がひと続きになっている', () => {
-  const starts = { town: [10, 11], inn: [4, 5], weapon: [4, 5], item: [4, 5], house: [4, 5], world: [9, 23], cave: [11, 16], castle: [11, 16] };
+  const starts = {
+    town: [10, 11], inn: [4, 5], weapon: [4, 5], item: [4, 5], house: [4, 5],
+    world: [9, 23], cave: [11, 16], port: [11, 14], portInn: [4, 5], portItem: [4, 5],
+    portWeapon: [4, 5], lighthouse: [4, 5], mine: [11, 16], castle: [11, 16],
+  };
   for (const [id, map] of Object.entries(MAPS)) {
     const [sx, sy] = starts[id];
     // 立て札は通れないので 障害物として数える（宝箱は開ければどく）
@@ -179,11 +183,42 @@ test('村・ほらあな・城が つながっていて、行き来できる', (
   assert.equal(warpAt(MAPS.castle, 11, 16).to, 'world');
 });
 
-test('魔王の城の門には ひかりのたま がいる', () => {
+test('魔王の城の門には 星のしずく がいる', () => {
   const gate = warpAt(MAPS.world, 18, 2);
-  assert.equal(gate.require, 'orb');
-  const orb = MAPS.cave.chests.find((c) => c.item === 'orb');
-  assert.ok(orb, 'ほらあなに ひかりのたま が置かれていない');
+  assert.equal(gate.require, 'star');
+  const shardA = MAPS.cave.chests.find((c) => c.item === 'shardA');
+  assert.ok(shardA, '洞くつに よあけの欠片 が置かれていない');
+  const gald = MAPS.mine.npcs.find((n) => n.kind === 'boss');
+  assert.equal(gald.onWin.item, 'shardB', '廃坑のボスが もう片方の欠片を 持っていない');
+  const keeper = MAPS.lighthouse.npcs.find((n) => n.kind === 'altar');
+  assert.deepEqual(keeper.needs, ['shardA', 'shardB']);
+  assert.equal(keeper.gives, 'star', '灯台で 星のしずく が できない');
+});
+
+test('みなとまちと 廃坑も 行き来できる', () => {
+  assert.equal(warpAt(MAPS.world, 28, 15).to, 'port');
+  assert.equal(warpAt(MAPS.world, 3, 14).to, 'mine');
+  assert.equal(warpAt(MAPS.port, 11, 15).to, 'world');
+  assert.equal(warpAt(MAPS.mine, 12, 16).to, 'world');
+  assert.equal(warpAt(MAPS.port, 20, 4).to, 'lighthouse');
+  assert.equal(warpAt(MAPS.lighthouse, 4, 6).to, 'port');
+});
+
+test('物語が 順番につながっている', () => {
+  // 村 → 洞くつ（欠片 1）→ 港町（灯台）→ 廃坑（欠片 2）→ 灯台 → 城
+  const elder = MAPS.house.npcs.find((n) => n.kind === 'elder');
+  assert.ok(elder.lines.some((l) => l.includes('こだまの洞くつ')), 'ちょうろうが 洞くつを 教えてくれない');
+  assert.ok(MAPS.cave.signs.some((s) => s.text.includes('サーラ')), '洞くつに 港町への 手がかりがない');
+  assert.ok(MAPS.port.npcs.some((n) => n.lines.some((l) => l.includes('廃坑'))), '港町に 廃坑の 手がかりがない');
+  assert.ok(elder.done.some((l) => l.includes('灯台')), '欠片を そろえたあとの 案内がない');
+});
+
+test('港の店では 村より 強い装備が買える', () => {
+  const village = SHOPS.weapon.goods;
+  const port = SHOPS.portWeapon.goods;
+  const priceOf = (id) => (ALL_GEAR.find((g) => g.id === id) || itemById(id)).price;
+  assert.ok(Math.max(...port.map(priceOf)) > Math.max(...village.map(priceOf)));
+  assert.ok(village.every((id) => !port.includes(id)), '同じ品を 二重に 売っている');
 });
 
 test('カウンター越しでも 店主に話しかけられる', () => {
@@ -206,6 +241,20 @@ test('川より北では 手ごわい魔物の表になる', () => {
   assert.ok(south.includes('slime'));
   assert.ok(!north.includes('slime'));
   assert.ok(north.includes('armor'));
+});
+
+test('すべての魔物が どこかで 出会える', () => {
+  const inTables = new Set(
+    Object.values(MAPS).flatMap((m) => [
+      ...(m.encounters || []).map((e) => e.id),
+      ...(m.zones || []).flatMap((z) => z.encounters.map((e) => e.id)),
+    ]),
+  );
+  const asBoss = new Set(Object.values(MAPS).flatMap((m) => m.npcs.filter((n) => n.monster).map((n) => n.monster)));
+  for (const monster of MONSTERS) {
+    assert.ok(inTables.has(monster.id) || asBoss.has(monster.id), `${monster.name} が どこにも 出てこない`);
+  }
+  for (const id of inTables) assert.ok(monsterById(id), `未知の魔物 ${id} が 抽選表にいる`);
 });
 
 test('宝箱は 開けたら消える', () => {
@@ -283,11 +332,11 @@ test('職業ごとに 能力の伸びかたが違う', () => {
 test('職業ごとに おぼえる呪文が違う', () => {
   const save = fullParty(2600);
   const [hero, garon, mina, sera] = save.party.map((m) => spellsOf(m).map((s) => s.id));
-  assert.ok(hero.includes('ionazun') || hero.includes('behoma'));
+  assert.ok(hero.includes('flamda') || hero.includes('rikada'));
   assert.deepEqual(garon, []);
-  assert.ok(mina.includes('zaoral'));
-  assert.ok(sera.includes('rarihoo'));
-  assert.ok(!sera.includes('zaoral'), 'まほうつかいが 蘇生を おぼえている');
+  assert.ok(mina.includes('revina'));
+  assert.ok(sera.includes('somna'));
+  assert.ok(!sera.includes('revina'), 'まほうつかいが 蘇生を おぼえている');
 });
 
 test('経験値でレベルが上がり、呪文をおぼえる', () => {
@@ -296,7 +345,7 @@ test('経験値でレベルが上がり、呪文をおぼえる', () => {
   const gained = gainExp(hero, expForLevel(4));
   assert.equal(levelOf(hero.exp), 4);
   assert.deepEqual(gained.map((g) => g.level), [2, 3, 4]);
-  assert.deepEqual(gained.flatMap((g) => g.spells.map((s) => s.id)), ['hoimi', 'gira']);
+  assert.deepEqual(gained.flatMap((g) => g.spells.map((s) => s.id)), ['rika', 'flam']);
 });
 
 test('レベルが上がると HP と MP も その分ふえる', () => {
@@ -327,7 +376,7 @@ test('装備すると 攻撃力と守備力が上がる', () => {
 
 // ------------------------------------------------------------------ 道具
 
-test('やくそうは 選んだ仲間を回復する', () => {
+test('いやしそうは 選んだ仲間を回復する', () => {
   const save = fullParty(600);
   const mina = save.party[2];
   mina.hp = 5;
@@ -338,29 +387,29 @@ test('やくそうは 選んだ仲間を回復する', () => {
   assert.equal(save.party[0].hp, statsOf(save.party[0]).maxHp, 'ほかの仲間まで回復している');
 });
 
-test('HP が満タンなら やくそうは 使えない', () => {
+test('HP が満タンなら いやしそうは 使えない', () => {
   const save = createSave();
   const res = useItem(save, 'herb', leaderOf(save), 'field', rng);
   assert.equal(res.ok, false);
   assert.equal(save.items.herb, 2);
 });
 
-test('せかいじゅのはは 死んだ仲間だけに使える', () => {
+test('よみがえりの花は 倒れた仲間だけに使える', () => {
   const save = fullParty(600);
-  addItem(save, 'leaf');
+  addItem(save, 'flower');
   const garon = save.party[1];
-  assert.equal(useItem(save, 'leaf', garon, 'field', rng).ok, false);
+  assert.equal(useItem(save, 'flower', garon, 'field', rng).ok, false);
   garon.hp = 0;
-  assert.ok(useItem(save, 'leaf', garon, 'field', rng).ok);
+  assert.ok(useItem(save, 'flower', garon, 'field', rng).ok);
   assert.equal(garon.hp, statsOf(garon).maxHp);
   assert.equal(save.items.leaf, undefined);
 });
 
-test('キメラのつばさは 戦闘中には使えない', () => {
+test('かえりの羽根は 戦闘中には使えない', () => {
   const save = createSave();
-  addItem(save, 'wing');
-  assert.equal(useItem(save, 'wing', leaderOf(save), 'battle', rng).ok, false);
-  assert.equal(useItem(save, 'wing', leaderOf(save), 'field', rng).warp, true);
+  addItem(save, 'feather');
+  assert.equal(useItem(save, 'feather', leaderOf(save), 'battle', rng).ok, false);
+  assert.equal(useItem(save, 'feather', leaderOf(save), 'field', rng).warp, true);
 });
 
 test('たねは 選んだ仲間の能力を永久に上げる', () => {
@@ -410,9 +459,9 @@ test('道具は買値の半分で売れる', () => {
 
 test('だいじな品は売れない', () => {
   const save = createSave();
-  addItem(save, 'orb');
-  assert.equal(sell(save, 'orb').ok, false);
-  assert.equal(save.items.orb, 1);
+  addItem(save, 'star');
+  assert.equal(sell(save, 'star').ok, false);
+  assert.equal(save.items.star, 1);
 });
 
 test('宿代は 人数がふえるほど高くなる', () => {
@@ -488,7 +537,7 @@ test('攻撃すると 魔物の HP が減る', () => {
   assert.ok(battle.monster.hp < before);
 });
 
-test('スライムには 勝てて 全員が経験値をもらえる', () => {
+test('ぷるんには 勝てて 全員が経験値をもらえる', () => {
   const save = fullParty(0);
   const battle = new Battle(save, 'slime', mulberry32(11));
   for (let i = 0; i < 30 && !battle.over; i++) battle.resolve(attackAll(save));
@@ -540,47 +589,47 @@ test('全滅すると 所持金が半分になって 村で目を覚ます', () 
   for (const m of save.party) assert.equal(m.hp, statsOf(m).maxHp);
 });
 
-test('ホイミで 選んだ仲間が回復する', () => {
+test('リカで 選んだ仲間が回復する', () => {
   const save = fullParty(600);
   const mina = save.party[2];
   const garon = save.party[1];
   garon.hp = 10;
   const battle = new Battle(save, 'golem', mulberry32(7));   // すぐ倒れない相手で
   const actions = attackAll(save);
-  actions[2] = { type: 'spell', id: 'hoimi', target: garon };
+  actions[2] = { type: 'spell', id: 'rika', target: garon };
   const mp = mina.mp;
   battle.resolve(actions);
   assert.ok(garon.hp > 10, 'ガロンが 回復していない');
-  assert.equal(mina.mp, mp - spellById('hoimi').mp);
+  assert.equal(mina.mp, mp - spellById('rika').mp);
 });
 
-test('ザオラルで 倒れた仲間が生き返ることがある', () => {
+test('リヴィナで 倒れた仲間が起きることがある', () => {
   let revived = 0;
   for (let seed = 0; seed < 40; seed++) {
-    const save = fullParty(1550);                 // ミナが ザオラルを覚えるレベル
+    const save = fullParty(1550);                 // ミナが リヴィナを覚えるレベル
     const mina = save.party[2];
     const garon = save.party[1];
     garon.hp = 0;
     const battle = new Battle(save, 'golem', mulberry32(500 + seed));
     const actions = attackAll(save);
     actions[1] = null;
-    actions[2] = { type: 'spell', id: 'zaoral', target: garon };
+    actions[2] = { type: 'spell', id: 'revina', target: garon };
     battle.resolve(actions);
     if (garon.hp > 0) revived++;
   }
   assert.ok(revived > 8 && revived < 38, `生き返る確率がおかしい: ${revived}/40`);
 });
 
-test('ラリホーで 魔物が眠る', () => {
+test('ソムナで 魔物が眠る', () => {
   let slept = 0;
   for (let seed = 0; seed < 40; seed++) {
     const save = fullParty(600);
     const battle = new Battle(save, 'golem', mulberry32(700 + seed));
-    const actions = [null, null, null, { type: 'spell', id: 'rarihoo' }];
+    const actions = [null, null, null, { type: 'spell', id: 'somna' }];
     const lines = battle.resolve(actions);
     if (lines.some((l) => l.text.includes('眠ってしまった'))) slept++;
   }
-  assert.ok(slept > 18, `ラリホーが 効かなすぎる: ${slept}/40`);
+  assert.ok(slept > 18, `ソムナが 効かなすぎる: ${slept}/40`);
 });
 
 test('MP が足りなければ 唱えられない', () => {
@@ -589,7 +638,7 @@ test('MP が足りなければ 唱えられない', () => {
   sera.mp = 0;
   const battle = new Battle(save, 'slime', mulberry32(8));
   const actions = attackAll(save);
-  actions[3] = { type: 'spell', id: 'gira' };
+  actions[3] = { type: 'spell', id: 'flam' };
   const lines = battle.resolve(actions);
   assert.ok(lines.some((l) => l.text.includes('MP')), 'MP 不足のメッセージが出ていない');
 });
@@ -598,9 +647,29 @@ test('おぼえていない呪文は 唱えられない', () => {
   const save = fullParty(600);
   const battle = new Battle(save, 'slime', mulberry32(9));
   const actions = attackAll(save);
-  actions[1] = { type: 'spell', id: 'hoimi' };     // せんしは 呪文を使えない
+  actions[1] = { type: 'spell', id: 'rika' };     // せんしは 呪文を使えない
   const lines = battle.resolve(actions);
   assert.ok(lines.some((l) => l.text.includes('知らない')));
+});
+
+test('中ボスからも 逃げられない', () => {
+  const save = fullParty(1550);
+  const battle = new Battle(save, 'gald', mulberry32(21));
+  const actions = attackAll(save);
+  actions[0] = { type: 'flee' };
+  battle.resolve(actions);
+  assert.equal(battle.result, null);
+});
+
+test('やみの将には Lv13 くらいの装備で 勝てる', () => {
+  let wins = 0;
+  for (let i = 0; i < 20; i++) {
+    const save = fullParty(expForLevel(13));
+    equipParty(save, 'steel', 'iron', 'ironShield');
+    save.items = { herb: 5 };
+    if (simulate(save, 'gald', 6000 + i).result === 'win') wins++;
+  }
+  assert.ok(wins >= 17, `やみの将に 勝てなさすぎる: ${wins}/20`);
 });
 
 test('魔王からは 逃げられない', () => {
@@ -626,7 +695,7 @@ test('弱い魔物からは たいてい逃げられる', () => {
   assert.ok(escaped > 30, `逃げられた回数が少なすぎる: ${escaped}`);
 });
 
-test('戦闘中でも やくそうを 仲間に使える', () => {
+test('戦闘中でも いやしそうを 仲間に使える', () => {
   const save = fullParty(600);
   const sera = save.party[3];
   sera.hp = 5;
@@ -638,13 +707,13 @@ test('戦闘中でも やくそうを 仲間に使える', () => {
   assert.equal(save.items.herb, 1);
 });
 
-test('バイキルトで 攻撃力が上がる', () => {
+test('ブレイヴで 攻撃力が上がる', () => {
   const save = fullParty(3300);
   const garon = save.party[1];
   const battle = new Battle(save, 'golem', mulberry32(14));
   const before = battle.atkOf(garon);
   const actions = attackAll(save);
-  actions[2] = { type: 'spell', id: 'baikiruto', target: garon };
+  actions[2] = { type: 'spell', id: 'brave', target: garon };
   battle.resolve(actions);
   assert.ok(battle.atkOf(garon) > before);
 });
@@ -665,7 +734,7 @@ test('セーブデータを読み書きしても中身が変わらない', () =>
   save.gold = 1234;
   save.party[1].weapon = 'steel';
   save.chests.push('cave-1');
-  addItem(save, 'wing', 3);
+  addItem(save, 'feather', 3);
   const back = normalizeSave(JSON.parse(JSON.stringify(save)));
   assert.deepEqual(back, save);
 });
@@ -732,12 +801,12 @@ function simulate(save, monsterId, seed) {
         .slice()
         .sort((a, b) => a.hp / statsOf(a).maxHp - b.hp / statsOf(b).maxHp)[0];
       const ratio = weakest ? weakest.hp / statsOf(weakest).maxHp : 1;
-      if (ratio < 0.5 && spells.includes('behoma') && member.mp >= 14) return { type: 'spell', id: 'behoma', target: weakest };
-      if (ratio < 0.5 && spells.includes('behoimi') && member.mp >= 8) return { type: 'spell', id: 'behoimi', target: weakest };
-      if (ratio < 0.4 && spells.includes('hoimi') && member.mp >= 4) return { type: 'spell', id: 'hoimi', target: weakest };
-      if (spells.includes('ionazun') && member.mp >= 20) return { type: 'spell', id: 'ionazun' };
-      if (spells.includes('begirama') && member.mp >= 9) return { type: 'spell', id: 'begirama' };
-      if (spells.includes('gira') && member.mp >= 5) return { type: 'spell', id: 'gira' };
+      if (ratio < 0.5 && spells.includes('rikada') && member.mp >= 14) return { type: 'spell', id: 'rikada', target: weakest };
+      if (ratio < 0.5 && spells.includes('rikara') && member.mp >= 8) return { type: 'spell', id: 'rikara', target: weakest };
+      if (ratio < 0.4 && spells.includes('rika') && member.mp >= 4) return { type: 'spell', id: 'rika', target: weakest };
+      if (spells.includes('flamda') && member.mp >= 20) return { type: 'spell', id: 'flamda' };
+      if (spells.includes('flamra') && member.mp >= 9) return { type: 'spell', id: 'flamra' };
+      if (spells.includes('flam') && member.mp >= 5) return { type: 'spell', id: 'flam' };
       return { type: 'attack' };
     });
     battle.resolve(actions);

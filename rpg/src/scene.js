@@ -186,6 +186,10 @@ export class Scene {
         if (map.kind === 'town' && tileAt(map, x, y - 1) !== '#') this.#roof(px, py);
         else this.#wall(px, py, n, map.kind);
         break;
+      case 'L':
+        this.#floorPath(px, py, n);
+        this.#lighthouse(px, py, tileAt(map, x, y - 1) !== 'L');
+        break;
       case 'o':
         ground();
         this.#rock(px, py, n);
@@ -280,6 +284,28 @@ export class Scene {
     ctx.moveTo(px + (n > 0.5 ? 0 : half), py + half);
     ctx.lineTo(px + (n > 0.5 ? 0 : half), py + tile);
     ctx.stroke();
+  }
+
+  /** 灯台。てっぺんのマスには 灯りをともす。 */
+  #lighthouse(px, py, top) {
+    const { ctx, tile } = this;
+    ctx.fillStyle = '#e9ecef';
+    ctx.fillRect(px, py, tile, tile);
+    ctx.fillStyle = '#c92a2a';
+    ctx.fillRect(px, py + tile * 0.34, tile, tile * 0.16);
+    ctx.fillRect(px, py + tile * 0.74, tile, tile * 0.16);
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 0.5, py + 0.5, tile - 1, tile - 1);
+    if (top) {
+      const glow = 0.55 + 0.45 * Math.sin(this.time / 500);
+      ctx.fillStyle = '#343a40';
+      ctx.fillRect(px + tile * 0.1, py, tile * 0.8, tile * 0.3);
+      ctx.fillStyle = `rgba(255, 224, 130, ${glow})`;
+      ctx.beginPath();
+      ctx.arc(px + tile / 2, py + tile * 0.14, tile * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   /** 村の家の屋根。 */
