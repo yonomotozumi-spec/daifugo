@@ -555,6 +555,38 @@ function setupInstall() {
   });
 }
 
+/**
+ * 長押しでコピー・翻訳のメニューが出ないようにする。
+ * CSS だけだと iOS の版によってはすり抜けるので、イベント側でも止めておく。
+ * 日誌や図鑑など、読ませたい場所ではふつうに選べるままにする。
+ */
+function suppressLongPressMenu() {
+  const readable = (target) => target.closest?.('dialog, .sidebar');
+
+  document.addEventListener('contextmenu', (e) => {
+    if (readable(e.target)) return;
+    e.preventDefault();
+  });
+
+  // 釣り場では、指を置いた時点で選択を始めさせない。
+  // pointerdown のほうが先に飛ぶので、キャストや巻き上げには影響しない。
+  // ただし中に置いてあるボタン（売る・逃がす）はタップを潰さないよう素通しする。
+  $('stage').addEventListener('touchstart', (e) => {
+    if (e.target.closest('button, a')) return;
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  // 巻き上げボタンは click を使っていないので、そのまま止めてよい
+  $('btn-action').addEventListener('touchstart', (e) => {
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('selectstart', (e) => {
+    if (readable(e.target)) return;
+    e.preventDefault();
+  });
+}
+
 /** 狭い画面で日誌を下から引き出す。 */
 function setupLogSheet() {
   const sheet = $('sidebar');
@@ -638,6 +670,7 @@ function init() {
   registerServiceWorker();
   setupInstall();
   setupLogSheet();
+  suppressLongPressMenu();
   // 画面の向きが変わったら canvas を作り直す
   window.addEventListener('orientationchange', () => setTimeout(() => scene.resize(), 250));
   for (const tab of document.querySelectorAll('.tab')) {

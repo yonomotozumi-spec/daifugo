@@ -16,6 +16,8 @@
 html, body {
   margin: 0;
   min-height: 100%;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 body {
@@ -32,7 +34,22 @@ body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
+
+/*
+ * iOS は長押しで「コピー」などのメニューを出そうとする。
+ * リールを長押しで巻くゲームなので、操作する部品では確実に止める。
+ * 読ませたい文章（日誌や図鑑の中身）だけあとで選べるように戻す。
+ */
+button, a, canvas, .stage, .badge, .wallet, .topbar, .controls {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button, a { touch-action: manipulation; }
 
 /* ------------------------------------------------------------ 小物 */
 
@@ -194,7 +211,6 @@ button.hot {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
   background: #0b3a52;
   touch-action: none;
-  user-select: none;
 }
 
 #scene { display: block; width: 100%; height: 100%; }
@@ -396,6 +412,9 @@ button.hot {
   from { opacity: 0; transform: translateX(-10px); }
   to { opacity: 1; transform: translateX(0); }
 }
+
+/* 読ませたい文章は選べるままにしておく */
+.log li, .shop-note, .ios-steps, .ios-note, .book-cell { -webkit-user-select: text; user-select: text; }
 
 /* ------------------------------------------------------------ ダイアログ */
 
