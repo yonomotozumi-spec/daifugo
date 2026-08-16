@@ -149,6 +149,59 @@ async function checkManifest() {
 }
 
 /**
+ * 指で長押ししたときに、ちゃんとリールが巻けるか。
+ * 長押しメニューを止める処理でタップやホールドを潰してしまうことがあるので、
+ * 本物のタッチイベントを流して確かめる。
+ */
+async function checkLongPressReel() {
+  const ctx = await browser.newContext(devices['iPhone 13']);
+  const page = await ctx.newPage();
+  const client = await ctx.newCDPSession(page);
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.fishing);
+
+  const touch = async (type, box) => {
+    const points = type === 'touchEnd' ? [] : [{
+      x: box.x + box.width / 2, y: box.y + box.height / 2, radiusX: 6, radiusY: 6, force: 1, id: 1,
+    }];
+    await client.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+  };
+
+  // アタリが来るまで投げ直す
+  let hooked = false;
+  for (let i = 0; i < 400 && !hooked; i++) {
+    const mode = await page.evaluate(() => window.fishing.mode);
+    const box = await page.locator('#btn-action').boundingBox();
+    if (mode === 'idle' || mode === 'bite') {
+      await touch('touchStart', box);
+      await touch('touchEnd', box);
+    }
+    if (await page.evaluate(() => window.fishing.mode) === 'fight') hooked = true;
+    await page.waitForTimeout(110);
+  }
+  if (!hooked) fail('長押しの確認までたどり着けなかった');
+
+  // 指を置いたままにする → 巻いている状態になること
+  const box = await page.locator('#btn-action').boundingBox();
+  await touch('touchStart', box);
+  await page.waitForTimeout(500);
+  const holdingWhileDown = await page.evaluate(() => window.fishing.scene.holding);
+  await touch('touchEnd', box);
+  await page.waitForTimeout(200);
+  const holdingAfterUp = await page.evaluate(() => window.fishing.scene.holding);
+
+  if (!holdingWhileDown) fail('指を置いてもリールを巻かない');
+  if (holdingAfterUp) fail('指を離しても巻き続けている');
+
+  // 選択が始まっていないこと（長押しメニューはここから出る）
+  const selected = await page.evaluate(() => String(window.getSelection?.() || '').length);
+  if (selected > 0) fail(`長押しで文字が選択されている（${selected} 文字）`);
+
+  console.log('長押し: 指を置くと巻けて、離すと止まる／文字は選択されない');
+  await ctx.close();
+}
+
+/**
  * iOS 向けの指定が配信物に入っているか。
  * -webkit-touch-callout は Chromium が実装していないので、
  * 計算済みスタイルではなく CSS そのものを読んで確かめる。
@@ -205,6 +258,7 @@ await playOn('iphone-landscape', 'iPhone 13 landscape');
 await playOn('ipad', 'iPad (gen 7)');
 await checkManifest();
 await checkIosCss();
+await checkLongPressReel();
 await checkOffline();
 
 await browser.close();
