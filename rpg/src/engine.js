@@ -536,9 +536,19 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
+    id: 'pup', name: 'やまいぬ', emoji: '🐕', color: '#d9a066',
+    hp: 18, atk: 8, def: 4, agi: 12, exp: 4, gold: 7, resist: 0,
+    actions: [{ kind: 'attack', w: 100 }],
+  },
+  {
     id: 'rat', name: 'どぶネズミ', emoji: '🐀', color: '#b39d86',
     hp: 22, atk: 9, def: 5, agi: 10, exp: 6, gold: 9, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
+  },
+  {
+    id: 'mush', name: 'まよいダケ', emoji: '🍄', color: '#e8590c',
+    hp: 26, atk: 11, def: 8, agi: 4, exp: 8, gold: 11, resist: 0.2,
+    actions: [{ kind: 'attack', w: 80 }, { kind: 'sleep', w: 20 }],
   },
   {
     id: 'bee', name: 'あばれバチ', emoji: '🐝', color: '#ffd43b',
@@ -553,6 +563,11 @@ export const MONSTERS = [
   {
     id: 'goblin', name: 'ゴブリン', emoji: '👺', color: '#e07a5f',
     hp: 52, atk: 19, def: 10, agi: 9, exp: 15, gold: 18, resist: 0,
+    actions: [{ kind: 'attack', w: 100 }],
+  },
+  {
+    id: 'bandit', name: 'やまぞく', emoji: '🏹', color: '#a9714b',
+    hp: 58, atk: 24, def: 12, agi: 14, exp: 18, gold: 24, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
@@ -576,9 +591,19 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
+    id: 'harpy', name: 'つむじどり', emoji: '🦅', color: '#ced4da',
+    hp: 96, atk: 36, def: 22, agi: 30, exp: 45, gold: 54, resist: 0, acts: 2,
+    actions: [{ kind: 'attack', w: 100 }],
+  },
+  {
     id: 'worm', name: 'いわむし', emoji: '🪱', color: '#c0a080',
     hp: 130, atk: 42, def: 34, agi: 8, exp: 52, gold: 60, resist: 0.25,
     actions: [{ kind: 'attack', w: 82 }, { kind: 'breath', power: [20, 28], w: 18 }],
+  },
+  {
+    id: 'ogre', name: 'おおおとこ', emoji: '🪓', color: '#c2703d',
+    hp: 175, atk: 52, def: 30, agi: 8, exp: 58, gold: 68, resist: 0.1,
+    actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'skeleton', name: 'ほねの剣士', emoji: '💀', color: '#dee2e6',
@@ -586,9 +611,24 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 85 }, { kind: 'sleep', w: 15 }],
   },
   {
+    id: 'ghost', name: 'あおざめた影', emoji: '👻', color: '#a5d8ff',
+    hp: 120, atk: 46, def: 26, agi: 24, exp: 72, gold: 82, resist: 0.45, acts: 2,
+    actions: [{ kind: 'attack', w: 70 }, { kind: 'sleep', w: 30 }],
+  },
+  {
     id: 'lizard', name: 'どくトカゲ', emoji: '🦎', color: '#82c91e',
     hp: 165, atk: 54, def: 34, agi: 14, exp: 80, gold: 90, resist: 0.2, acts: 2,
     actions: [{ kind: 'attack', w: 75 }, { kind: 'breath', power: [24, 34], w: 25 }],
+  },
+  {
+    id: 'spider', name: 'おおグモ', emoji: '🕷️', color: '#495057',
+    hp: 190, atk: 56, def: 36, agi: 22, exp: 95, gold: 105, resist: 0.15, acts: 2,
+    actions: [{ kind: 'attack', w: 78 }, { kind: 'sleep', w: 22 }],
+  },
+  {
+    id: 'lava', name: 'マグマの塊', emoji: '🌋', color: '#ff922b',
+    hp: 230, atk: 62, def: 42, agi: 10, exp: 115, gold: 130, resist: 0.7,
+    actions: [{ kind: 'attack', w: 55 }, { kind: 'breath', power: [34, 46], w: 45 }],
   },
   {
     id: 'golem', name: '岩人形', emoji: '🗿', color: '#8d99ae',
@@ -606,9 +646,24 @@ export const MONSTERS = [
     ],
   },
   {
+    id: 'reaper', name: 'しにがみ', emoji: '☠️', color: '#b197fc',
+    hp: 260, atk: 68, def: 48, agi: 30, exp: 175, gold: 200, resist: 0.3, acts: 2,
+    actions: [{ kind: 'attack', w: 65 }, { kind: 'spell', id: 'flamra', w: 20 }, { kind: 'sleep', w: 15 }],
+  },
+  {
     id: 'knight', name: 'やみの騎兵', emoji: '😈', color: '#f06595',
     hp: 320, atk: 74, def: 54, agi: 24, exp: 210, gold: 240, resist: 0.2, acts: 2,
     actions: [{ kind: 'attack', w: 80 }, { kind: 'breath', power: [30, 42], w: 20 }],
+  },
+  {
+    id: 'mask', name: 'かめんの兵', emoji: '🎭', color: '#e599f7',
+    hp: 300, atk: 76, def: 58, agi: 26, exp: 250, gold: 280, resist: 0.2, acts: 2,
+    actions: [{ kind: 'attack', w: 85 }, { kind: 'heal', power: 80, w: 15 }],
+  },
+  {
+    id: 'wyvern', name: 'くろい翼竜', emoji: '🐲', color: '#748ffc',
+    hp: 380, atk: 80, def: 56, agi: 28, exp: 290, gold: 330, resist: 0.4, acts: 2,
+    actions: [{ kind: 'attack', w: 55 }, { kind: 'breath', power: [40, 54], w: 45 }],
   },
   {
     id: 'dragon', name: 'ドラゴン', emoji: '🐉', color: '#69db7c',
@@ -616,12 +671,32 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 60 }, { kind: 'breath', power: [42, 58], w: 40 }],
   },
   {
+    id: 'golva', name: '岩窟の主 ゴルヴァ', emoji: '🪨', color: '#adb5bd',
+    hp: 760, atk: 58, def: 40, agi: 12, exp: 190, gold: 230, resist: 0.2, boss: true, acts: 2,
+    actions: [{ kind: 'attack', w: 82 }, { kind: 'breath', power: [20, 30], w: 18 }],
+  },
+  {
     id: 'gald', name: 'やみの将 ガルド', emoji: '🗡️', color: '#ffa8a8',
-    hp: 700, atk: 62, def: 44, agi: 20, exp: 420, gold: 520, resist: 0.25, boss: true, acts: 2,
+    hp: 1200, atk: 80, def: 52, agi: 20, exp: 420, gold: 520, resist: 0.25, boss: true, acts: 2,
     actions: [
       { kind: 'attack', w: 60 },
       { kind: 'breath', power: [26, 38], w: 25 },
       { kind: 'heal', power: 70, w: 15 },
+    ],
+  },
+  {
+    id: 'yugd', name: 'もりの主 ユグド', emoji: '🌳', color: '#51cf66',
+    hp: 1200, atk: 82, def: 60, agi: 6, exp: 360, gold: 420, resist: 0.5, boss: true, acts: 2,
+    actions: [{ kind: 'attack', w: 70 }, { kind: 'heal', power: 80, w: 15 }, { kind: 'sleep', w: 15 }],
+  },
+  {
+    id: 'valdes', name: '黒衣の魔導 ヴァレス', emoji: '🔮', color: '#cc5de8',
+    hp: 1300, atk: 94, def: 62, agi: 28, exp: 620, gold: 720, resist: 0.45, boss: true, acts: 3,
+    actions: [
+      { kind: 'attack', w: 35 },
+      { kind: 'spell', id: 'flamra', w: 30 },
+      { kind: 'breath', power: [36, 50], w: 20 },
+      { kind: 'heal', power: 110, w: 15 },
     ],
   },
   {

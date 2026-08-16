@@ -364,6 +364,14 @@ async function talkTo(npc) {
 async function openChest(chest) {
   const data = state.save;
   await runFlow(async () => {
+    // 見張りつきの宝箱は、まず その魔物を たおさないと 開けられない。
+    if (chest.guard && !data.flags[`guard:${chest.id}`]) {
+      await sayAll(chest.guardLines || ['宝箱を 魔物が 守っている！']);
+      hideMessage();
+      if ((await startBattle(chest.guard)) !== 'win') return;
+      data.flags[`guard:${chest.id}`] = true;
+      save();
+    }
     data.chests.push(chest.id);
     if (chest.gold) {
       data.gold += chest.gold;

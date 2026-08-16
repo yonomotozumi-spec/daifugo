@@ -181,9 +181,28 @@ await page.waitForTimeout(400);
 ok('ほらあなに 入れた', (await game()).map === 'cave');
 await shot('07-cave');
 
+// 見張りつきの宝箱（洞くつの主）
+await page.evaluate(() => {
+  for (const m of window.rpg.party) { m.exp = 1150; m.weapon = 'steel'; m.armor = 'iron'; m.bonusStr = 120; m.hp = 999; }
+  window.rpg.teleport('cave', 11, 5);
+});
+await page.waitForTimeout(300);
+await page.keyboard.press('ArrowUp');                 // 宝箱を向く
+await page.waitForTimeout(200);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+for (let i = 0; i < 20 && (await mode()) !== 'battle'; i++) {   // 主が 目をさます
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+}
+await shot('07a-guard');
+await fight('attack');
+await clearMessages(14);
+ok('洞くつの主を たおして 欠片を 取れた', (await game()).items.shardA === 1);
+
 await page.evaluate(() => {
   for (const m of window.rpg.party) { m.exp = 5200; m.weapon = 'light'; m.armor = 'lightArmor'; }
-  window.rpg.teleport('castle', 11, 4);
+  window.rpg.teleport('castle', 11, 7);
 });
 await page.waitForTimeout(400);
 await shot('08-castle');
@@ -227,10 +246,7 @@ ok('やみの将を たおして 欠片を 手に入れた', (await game()).item
 
 // ---------------------------------------------------------------- 灯台で 欠片を合わせる
 
-await page.evaluate(() => {
-  window.rpg.save.items.shardA = 1;
-  window.rpg.teleport('lighthouse', 4, 3);
-});
+await page.evaluate(() => window.rpg.teleport('lighthouse', 4, 3));
 await page.waitForTimeout(300);
 await page.keyboard.press('ArrowUp');
 await page.waitForTimeout(200);
@@ -272,8 +288,23 @@ await page.evaluate(() => {
     m.hp = 1000;
     m.mp = 200;
   }
-  window.rpg.teleport('castle', 11, 3);
+  window.rpg.teleport('castle', 11, 5);
 });
+await page.waitForTimeout(300);
+await walk('up', 1);                                // 黒衣の魔導を向く
+await page.waitForTimeout(200);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+for (let i = 0; i < 20 && (await mode()) !== 'battle'; i++) {
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+}
+await shot('09b-valdes');
+await fight('attack');
+await clearMessages(14);
+ok('玉座の前の 黒衣の魔導を たおした', (await game()).flags.valdesDead === true);
+
+await page.evaluate(() => window.rpg.teleport('castle', 11, 3));
 await page.waitForTimeout(300);
 await walk('up', 1);                                // 魔王を向く（ふさがれて向きだけ変わる）
 await page.waitForTimeout(200);

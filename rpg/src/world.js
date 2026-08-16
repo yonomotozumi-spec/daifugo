@@ -208,23 +208,28 @@ const world = {
   kind: 'field',
   encRate: 0.09,
   encounters: [
-    { id: 'slime', w: 30 },
-    { id: 'rat', w: 24 },
-    { id: 'bee', w: 18 },
-    { id: 'frog', w: 16 },
-    { id: 'goblin', w: 18 },
+    { id: 'slime', w: 24 },
+    { id: 'pup', w: 20 },
+    { id: 'rat', w: 18 },
+    { id: 'mush', w: 14 },
+    { id: 'bee', w: 14 },
+    { id: 'frog', w: 12 },
+    { id: 'goblin', w: 12 },
+    { id: 'bandit', w: 8 },
   ],
   // 川より北は 一段と 手ごわい魔物が出る。
   zones: [
     {
       x0: 0, y0: 0, x1: 39, y1: 17,
       encounters: [
-        { id: 'goblin', w: 16 },
-        { id: 'wolf', w: 24 },
-        { id: 'bat', w: 18 },
-        { id: 'mage', w: 20 },
-        { id: 'armor', w: 20 },
-        { id: 'skeleton', w: 10 },
+        { id: 'bandit', w: 14 },
+        { id: 'wolf', w: 20 },
+        { id: 'bat', w: 16 },
+        { id: 'harpy', w: 14 },
+        { id: 'mage', w: 16 },
+        { id: 'armor', w: 16 },
+        { id: 'ogre', w: 12 },
+        { id: 'skeleton', w: 8 },
       ],
     },
   ],
@@ -272,7 +277,25 @@ const world = {
       openText: '星のしずくが まばゆく光った！\n結界が 音をたてて くだけ散った！',
     },
   ],
-  npcs: [],
+  npcs: [
+    {
+      id: 'yugd', x: 22, y: 24, kind: 'boss', emoji: '🌳', name: 'もりの主 ユグド', monster: 'yugd',
+      defeatFlag: 'yugdDead',
+      lines: [
+        '……森が ざわめいている。',
+        '古い木が ゆっくりと 目をあけた。',
+        '「通りたくば 力を 見せよ」',
+      ],
+      onWin: {
+        item: 'seedStr',
+        lines: [
+          'もりの主は 静かに 根をおろした。',
+          '「よい 目をしている。持っていけ」',
+          '剛力の実を 手に入れた！',
+        ],
+      },
+    },
+  ],
   chests: [{ id: 'world-1', x: 3, y: 27, gold: 120 }],
   signs: [
     { x: 10, y: 22, text: '←「はじまりの村 リオン」\n↑ 北へ まおうの城\n→ 東へ こだまの洞くつ' },
@@ -290,11 +313,13 @@ const cave = {
   dark: true,
   encRate: 0.12,
   encounters: [
-    { id: 'armor', w: 22 },
-    { id: 'skeleton', w: 26 },
-    { id: 'lizard', w: 24 },
-    { id: 'mage', w: 16 },
-    { id: 'golem', w: 12 },
+    { id: 'armor', w: 16 },
+    { id: 'worm', w: 18 },
+    { id: 'skeleton', w: 18 },
+    { id: 'ghost', w: 16 },
+    { id: 'lizard', w: 16 },
+    { id: 'spider', w: 10 },
+    { id: 'golem', w: 6 },
   ],
   tiles: [
     '########################',
@@ -335,7 +360,14 @@ const cave = {
   chests: [
     { id: 'cave-1', x: 2, y: 1, item: 'seedStr' },
     { id: 'cave-2', x: 21, y: 1, gold: 320 },
-    { id: 'cave-3', x: 11, y: 4, item: 'shardA', fanfare: true },
+    {
+      id: 'cave-3', x: 11, y: 4, item: 'shardA', fanfare: true,
+      guard: 'golva',
+      guardLines: [
+        '宝箱に 手を かけた そのとき——',
+        '岩が むくりと 起きあがった！\n洞くつの 主が 目を さましたのだ！',
+      ],
+    },
     { id: 'cave-4', x: 14, y: 9, item: 'mana' },
     { id: 'cave-5', x: 2, y: 14, item: 'flower' },
   ],
@@ -349,18 +381,20 @@ const castle = {
   kind: 'castle',
   encRate: 0.13,
   encounters: [
-    { id: 'skeleton', w: 14 },
-    { id: 'witch', w: 24 },
-    { id: 'knight', w: 26 },
-    { id: 'golem', w: 16 },
-    { id: 'dragon', w: 20 },
+    { id: 'witch', w: 16 },
+    { id: 'reaper', w: 18 },
+    { id: 'knight', w: 18 },
+    { id: 'mask', w: 16 },
+    { id: 'wyvern', w: 16 },
+    { id: 'dragon', w: 12 },
+    { id: 'golem', w: 4 },
   ],
   tiles: [
     '########################',
     '#######,,,,,,,,,,#######',
     '#######,,,,,,,,,,#######',
     '#######,,,,,,,,,,#######',
-    '#####,,,,,,,,,,,,,,#####',
+    '###########,############',
     '#####,,####,,####,,#####',
     '#####,,####,,####,,#####',
     '#,,,,,,,,,,,,,,,,,,,,,,#',
@@ -378,6 +412,20 @@ const castle = {
   warps: [{ x: 11, y: 16, to: 'world', tx: 18, ty: 3, dir: 'down' }],
   npcs: [
     {
+      id: 'valdes', x: 11, y: 4, kind: 'boss', emoji: '🔮', name: '黒衣の魔導 ヴァレス', monster: 'valdes',
+      defeatFlag: 'valdesDead',
+      lines: [
+        'ここから 先は 玉座の間。',
+        'ザルガスさまに 会いたくば\nまず わしの 魔をこえて みせよ。',
+      ],
+      onWin: {
+        lines: [
+          'ヴァレスの ローブが ほどけ\n風に 溶けるように 消えていく。',
+          '「……夜明けが 来るのか」\n玉座への 道が ひらけた。',
+        ],
+      },
+    },
+    {
       id: 'darklord', x: 11, y: 2, kind: 'boss', emoji: '👹', name: 'まおう ザルガス', monster: 'darklord',
       defeatFlag: 'bossDead',
       lines: [
@@ -392,7 +440,7 @@ const castle = {
     { id: 'castle-2', x: 21, y: 10, gear: 'lightArmor' },
     { id: 'castle-3', x: 7, y: 7, item: 'seedHp' },
     { id: 'castle-4', x: 16, y: 13, gold: 800 },
-    { id: 'castle-5', x: 6, y: 4, item: 'flower' },
+    { id: 'castle-5', x: 18, y: 7, item: 'flower' },
   ],
   signs: [],
 };
@@ -463,6 +511,21 @@ const port = {
       lines: ['灯台守の おじいさんは\nずっと あの灯りを 守っているの。', '海の魔物が 増えて 船が 出せないのよ。'],
     },
     { id: 'gull', x: 13, y: 2, kind: 'talk', emoji: '🐦', name: 'かもめ', lines: ['ぴゅい。'] },
+    {
+      id: 'hunter', x: 3, y: 11, kind: 'talk', look: { cloth: '#8d6e63', hair: '#3b2b20' }, name: '猟師',
+      lines: [
+        '南の 森に 「もりの主」が いるって 話だ。',
+        '古い木の 姿を した 大物さ。\n倒せば 力を 分けて くれるとか。',
+        'まあ おれには 手に負えん。',
+      ],
+    },
+    {
+      id: 'oldSailor', x: 20, y: 12, kind: 'talk', look: { cloth: '#495057', hair: '#e9ecef' }, name: '老いた船乗り',
+      lines: [
+        '城の 玉座の 前には\n「黒衣の魔導」が 立ちはだかる。',
+        'あいつの 炎は 生半可じゃ 防げん。\nよく 備えて 行きな。',
+      ],
+    },
   ],
   chests: [],
 };
@@ -531,11 +594,13 @@ const mine = {
   dark: true,
   encRate: 0.13,
   encounters: [
-    { id: 'bat', w: 22 },
-    { id: 'worm', w: 24 },
-    { id: 'armor', w: 18 },
-    { id: 'skeleton', w: 22 },
-    { id: 'golem', w: 14 },
+    { id: 'worm', w: 16 },
+    { id: 'ogre', w: 16 },
+    { id: 'skeleton', w: 16 },
+    { id: 'ghost', w: 14 },
+    { id: 'spider', w: 14 },
+    { id: 'lava', w: 12 },
+    { id: 'golem', w: 12 },
   ],
   tiles: [
     '########################',

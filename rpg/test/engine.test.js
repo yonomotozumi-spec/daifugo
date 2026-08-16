@@ -250,7 +250,10 @@ test('すべての魔物が どこかで 出会える', () => {
       ...(m.zones || []).flatMap((z) => z.encounters.map((e) => e.id)),
     ]),
   );
-  const asBoss = new Set(Object.values(MAPS).flatMap((m) => m.npcs.filter((n) => n.monster).map((n) => n.monster)));
+  const asBoss = new Set([
+    ...Object.values(MAPS).flatMap((m) => m.npcs.filter((n) => n.monster).map((n) => n.monster)),
+    ...Object.values(MAPS).flatMap((m) => (m.chests || []).filter((c) => c.guard).map((c) => c.guard)),
+  ]);
   for (const monster of MONSTERS) {
     assert.ok(inTables.has(monster.id) || asBoss.has(monster.id), `${monster.name} が どこにも 出てこない`);
   }
@@ -652,24 +655,70 @@ test('おぼえていない呪文は 唱えられない', () => {
   assert.ok(lines.some((l) => l.text.includes('知らない')));
 });
 
-test('中ボスからも 逃げられない', () => {
-  const save = fullParty(1550);
-  const battle = new Battle(save, 'gald', mulberry32(21));
-  const actions = attackAll(save);
-  actions[0] = { type: 'flee' };
-  battle.resolve(actions);
-  assert.equal(battle.result, null);
+test('ボスからは だれからも 逃げられない', () => {
+  for (const boss of MONSTERS.filter((m) => m.boss)) {
+    const save = fullParty(expForLevel(20));
+    const battle = new Battle(save, boss.id, mulberry32(21));
+    const actions = attackAll(save);
+    actions[0] = { type: 'flee' };
+    battle.resolve(actions);
+    assert.equal(battle.result, null, `${boss.name}から 逃げられてしまう`);
+  }
 });
 
-test('やみの将には Lv13 くらいの装備で 勝てる', () => {
-  let wins = 0;
-  for (let i = 0; i < 20; i++) {
-    const save = fullParty(expForLevel(13));
-    equipParty(save, 'steel', 'iron', 'ironShield');
-    save.items = { herb: 5 };
-    if (simulate(save, 'gald', 6000 + i).result === 'win') wins++;
+test('中ボスは 節目ごとに 立ちはだかる', () => {
+  const bosses = MONSTERS.filter((m) => m.boss && !m.final);
+  assert.ok(bosses.length >= 4, `中ボスが 少ない: ${bosses.length}`);
+  // 出会う順に 強くなっていく
+  const order = ['golva', 'gald', 'yugd', 'valdes'];
+  const hp = order.map((id) => monsterById(id).hp);
+  for (let i = 1; i < hp.length; i++) assert.ok(hp[i] >= hp[i - 1], `${order[i]} が 前の中ボスより 弱い`);
+  const boss = monsterById('darklord');
+  assert.ok(boss.hp > Math.max(...hp), '魔王より 強い中ボスがいる');
+});
+
+test('中ボスは 想定レベルなら 勝てて、早すぎると 勝てない', () => {
+  const plan = [
+    ['golva', 10, 8, 'copper', 'chain', 'leatherShield'],
+    ['gald', 13, 11, 'steel', 'iron', 'ironShield'],
+    ['valdes', 18, 14, 'flame', 'magic', 'ironShield'],
+  ];
+  for (const [id, level, tooEarly, weapon, armor, shield] of plan) {
+    let wins = 0;
+    let earlyWins = 0;
+    for (let i = 0; i < 20; i++) {
+      const ready = fullParty(expForLevel(level));
+      equipParty(ready, weapon, armor, shield);
+      ready.items = { herb: 6, flower: 1 };
+      if (simulate(ready, id, 6000 + i).result === 'win') wins++;
+
+      const early = fullParty(expForLevel(tooEarly));
+      equipParty(early, weapon, armor, shield);
+      early.items = { herb: 6 };
+      if (simulate(early, id, 7000 + i).result === 'win') earlyWins++;
+    }
+    assert.ok(wins >= 14, `${monsterById(id).name}に 勝てなさすぎる: ${wins}/20`);
+    assert.ok(earlyWins <= 8, `${monsterById(id).name}が 早いレベルで 楽勝すぎる: ${earlyWins}/20`);
   }
-  assert.ok(wins >= 17, `やみの将に 勝てなさすぎる: ${wins}/20`);
+});
+
+test('欠片の宝箱は 主が 守っている', () => {
+  const chest = MAPS.cave.chests.find((c) => c.item === 'shardA');
+  assert.equal(chest.guard, 'golva');
+  assert.ok(monsterById(chest.guard).boss, '見張りが ボス扱いになっていない');
+  assert.ok(chest.guardLines.length, '見張りが 出てくるときの メッセージがない');
+});
+
+test('ボスは 倒したら 消えて、ごほうびをくれる', () => {
+  const bossNpcs = Object.values(MAPS).flatMap((m) => m.npcs.filter((n) => n.kind === 'boss'));
+  assert.ok(bossNpcs.length >= 3, `立ちはだかるボスが 少ない: ${bossNpcs.length}`);
+  for (const npc of bossNpcs) {
+    assert.ok(monsterById(npc.monster), `${npc.id}: 未知の魔物 ${npc.monster}`);
+    assert.ok(npc.defeatFlag, `${npc.id}: 倒したしるしが ない`);
+    if (npc.onWin?.item) assert.ok(itemById(npc.onWin.item), `${npc.id}: 未知のごほうび`);
+  }
+  const flags = bossNpcs.map((n) => n.defeatFlag);
+  assert.equal(new Set(flags).size, flags.length, '倒したしるしが かぶっている');
 });
 
 test('魔王からは 逃げられない', () => {
@@ -825,10 +874,20 @@ function equipParty(save, weapon, armor, shield) {
 
 test('道中の魔物には ちゃんと勝てる', () => {
   const plan = [
+    ['mush', 3, 'stick', 'clothes', 'none'],
     ['goblin', 5, 'copper', 'leather', 'none'],
+    ['bandit', 7, 'copper', 'leather', 'leatherShield'],
+    ['harpy', 9, 'copper', 'chain', 'leatherShield'],
     ['armor', 9, 'copper', 'chain', 'leatherShield'],
+    ['ogre', 11, 'steel', 'chain', 'ironShield'],
     ['skeleton', 11, 'steel', 'chain', 'ironShield'],
+    ['ghost', 12, 'steel', 'iron', 'ironShield'],
+    ['spider', 13, 'steel', 'iron', 'ironShield'],
+    ['lava', 14, 'steel', 'iron', 'ironShield'],
     ['golem', 13, 'steel', 'iron', 'ironShield'],
+    ['reaper', 16, 'flame', 'magic', 'ironShield'],
+    ['mask', 16, 'flame', 'magic', 'mirrorShield'],
+    ['wyvern', 17, 'flame', 'magic', 'mirrorShield'],
     ['dragon', 17, 'flame', 'magic', 'mirrorShield'],
   ];
   for (const [id, level, weapon, armor, shield] of plan) {
