@@ -112,19 +112,28 @@ await shot('02-town');
   }));
   await page.keyboard.up('ArrowDown');
 
-  // フレームの間隔じたいが ゆらぐ環境でも 測れるよう、1 秒あたりの速さに直して見る
-  const speed = [];
+  // 目に見えるのは「1 フレームでどれだけ動いたか」なので、そこの そろい方を見る。
+  // 1 秒あたりの速さは 別に 平均で確かめる（フレーム間隔の ゆらぎを ならしているぶん、
+  // 1 フレームずつ 秒速に直すと ゆらぎが そのまま出てしまい 測りたいものが見えない）。
+  const perFrame = [];
   const onScreen = [];
   for (let i = 1; i < rows.length; i++) {
-    const dt = rows[i].t - rows[i - 1].t;
-    if (dt <= 0) continue;
-    speed.push(((rows[i].cam - rows[i - 1].cam) / dt) * 1000);
+    perFrame.push(rows[i].cam - rows[i - 1].cam);
     onScreen.push((rows[i].hero - rows[i].cam) - (rows[i - 1].hero - rows[i - 1].cam));
   }
-  const mid = [...speed].sort((a, b) => a - b)[Math.floor(speed.length / 2)];
-  const jumpy = speed.filter((v) => Math.abs(v - mid) > mid * 0.12).length;
+  const mid = [...perFrame].sort((a, b) => a - b)[Math.floor(perFrame.length / 2)];
+  const jumpy = perFrame.filter((v) => Math.abs(v - mid) > mid * 0.12).length;
   const drift = Math.max(...onScreen.map(Math.abs));
-  ok(`地面が 一定の速さで流れる（中央値 ${mid.toFixed(0)}px/秒、ばらつき ${jumpy}/${speed.length}）`, mid > 100 && jumpy === 0);
+  const last = rows[rows.length - 1];
+  const speed = ((last.cam - rows[0].cam) / (last.t - rows[0].t)) * 1000;
+  const want = await page.evaluate(() => (window.rpg.state.scene.tile / window.rpg.stepMs) * 1000);
+  const off = Math.abs(speed - want) / want;
+
+  // ときどき 1 枚 落ちるのは 環境しだいなので 1 割まで見のがす。
+  // 見つけたいのは 毎フレーム ばらつく たちの かくつき（丸めやカメラの取りちがえ）。
+  const allow = Math.ceil(perFrame.length * 0.1);
+  ok(`地面が 一定の量ずつ流れる（中央値 ${mid.toFixed(2)}px/フレーム、ばらつき ${jumpy}/${perFrame.length}、${allow} まで可）`, mid > 1 && jumpy <= allow);
+  ok(`速さが 設定どおり（${speed.toFixed(0)} / ${want.toFixed(0)} px/秒、ずれ ${(off * 100).toFixed(1)}%）`, off < 0.06);
   ok(`主人公が 画面の同じ場所に とどまる（ぶれ ${drift.toFixed(2)}px）`, drift < 0.35);
 
   await page.evaluate(() => { window.rpg.state.map.encRate = window.__encRate; });

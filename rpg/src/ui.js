@@ -28,7 +28,7 @@ const state = {
   mode: 'title',              // title / field / busy / battle
   held: null,                 // 押しっぱなしの方向
   moving: null,               // { dir, dx, dy, t }
-  ox: 0, oy: 0, frame: 0,
+  ox: 0, oy: 0,
   trail: [],                  // 隊列。先頭が通ってきたマスを 3 つぶん覚えておく
   flash: 0,
   sinceBattle: 0,             // 最後の戦闘からの歩数
@@ -248,7 +248,7 @@ function refreshNpcs() {
   state.npcs = state.map.npcs
     .filter((n) => !(n.kind === 'boss' && flags[n.defeatFlag || 'bossDead']))
     .filter((n) => !(n.kind === 'join' && flags[`join:${n.id}`]))
-    .map((n) => ({ ...n, dir: n.dir || 'down', frame: 0 }));
+    .map((n) => ({ ...n, dir: n.dir || 'down' }));
 }
 
 function enterMap(id, x, y, dir = 'down') {
@@ -288,10 +288,7 @@ function tryMove(dir) {
   const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
   const nx = data.x + d[0];
   const ny = data.y + d[1];
-  if (blocked(nx, ny)) {
-    state.frame = (state.frame + 1) % 2;
-    return false;
-  }
+  if (blocked(nx, ny)) return false;
   state.moving = { dir, t: 0, dx: d[0], dy: d[1] };
   return true;
 }
@@ -1055,6 +1052,27 @@ function setupTouch() {
 // ---------------------------------------------------------------- ループ
 
 let lastFrame = 0;
+let smoothDt = 1000 / 60;
+
+/**
+ * フレームの間隔を ならす。
+ *
+ * requestAnimationFrame が 教えてくる間隔は 実際には こまかく ゆれる
+ * （16.7 → 21.6 → 15.2 …）。画面が書きかわるのは ほぼ等間隔なのに、
+ * そのゆれを そのまま「1 フレームに進む量」に使うと 歩きが かくついて見える。
+ * ならして使えば 進む量が そろい、時間あたりの速さは ほとんど変わらない
+ * （ならしは 平均をずらさないので 長い目で見た距離は 合う）。
+ *
+ * 大きく飛んだフレーム（描画が つまった・別のタブから戻った）は そのまま返し、
+ * ならしの中には 混ぜない。混ぜると そのあと 10 フレームほど 世界が 速く動いてしまい、
+ * 直そうとしている かくつきを かえって 作ってしまう。
+ */
+function pace(raw) {
+  if (raw <= 0) return smoothDt;
+  if (raw > 40) return raw;
+  smoothDt += (raw - smoothDt) * 0.2;
+  return smoothDt;
+}
 
 function update(dt) {
   if (state.flash > 0) state.flash = Math.max(0, state.flash - dt / 400);
@@ -1088,7 +1106,6 @@ function update(dt) {
     data.y += state.moving.dy;
     state.ox = 0;
     state.oy = 0;
-    state.frame = (state.frame + 1) % 2;
     state.moving = null;
     finishStep();
     if (state.mode !== 'field' || state.pending) break;   // 会話・戦闘に入ったら そこで止める
@@ -1102,10 +1119,16 @@ function partyOnMap() {
   const p = state.moving ? Math.min(1, state.moving.t / STEP_MS) : 1;
   const walking = !!state.moving;
   const now = performance.now() / 1000;
-  // 足は 1 マスのあいだに 2 回入れかわる。止まっているときは ゆっくり呼吸。
-  const legs = (base) => (walking ? (base + (p >= 0.5 ? 1 : 0)) % 2 : base);
+  // 手足は 2 コマを パタパタ切りかえない。1 マス 132ms なので 切りかえると
+  // 1 秒に 7 回も パッと変わって 歩きではなく ふるえに見える。
+  // 歩いた距離で 位相を決めれば マスの境目でも つながり、なめらかに振れる。
+  // 1 マスで 半周（＝右足・左足が 1 マスずつ 交互に前へ出る）。
+  const phase = data.steps + (walking ? p : 0);
+  const swing = (i) => (walking ? Math.sin((phase - i * 0.5) * Math.PI) : 0);
+  // はずみは |sin| ではなく (1-cos)/2 を使う。|sin| は マスの境目で 折れ目ができて、
+  // 1 秒に 7 回 かくんと動いて見える。(1-cos)/2 は 境目で 傾きも 0 なので つながる。
   const bounce = (i) => (walking
-    ? -Math.abs(Math.sin(p * Math.PI)) * 0.05
+    ? -(1 - Math.cos(p * Math.PI * 2)) / 2 * 0.03
     : Math.sin(now * 1.8 + i * 0.9) * 0.012);
 
   // はずみは y ではなく bob で渡す。y に混ぜると カメラが それを追いかけて
@@ -1115,7 +1138,7 @@ function partyOnMap() {
     y: data.y + state.oy,
     bob: bounce(0),
     dir: data.dir,
-    frame: legs(state.frame),
+    swing: swing(0),
     look: classById(party()[0].cls).look,
   }];
   for (let i = 1; i < party().length; i++) {
@@ -1126,7 +1149,7 @@ function partyOnMap() {
       y: from.y + (to.y - from.y) * p,
       bob: bounce(i),
       dir: to.dir,
-      frame: legs(state.frame + i),
+      swing: swing(i),
       look: classById(party()[i].cls).look,
       down: isDown(party()[i]),
     });
@@ -1135,7 +1158,7 @@ function partyOnMap() {
 }
 
 function frame(now) {
-  const dt = Math.min(64, now - lastFrame);
+  const dt = pace(Math.min(64, now - lastFrame));
   lastFrame = now;
   update(dt);
 
@@ -1219,6 +1242,7 @@ function init() {
     press,
     move(dir) { setHeld(dir); },
     stop() { state.held = null; },
+    stepMs: STEP_MS,                      // テストが 期待する速さを 出せるように
     teleport(map, x, y) { enterMap(map, x, y, 'down'); },
     encounter(id) { startBattle(id); },   // 待たずに返す（テストから操作できるように）
     persist: save,                        // save は上の getter（セーブデータ）なので別名で
