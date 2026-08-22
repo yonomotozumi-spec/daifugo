@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>テキサスホールデム — CPU 3人と対戦するポーカー</title>
+<meta name="description" content="CPU 3人と戦うノーリミット・テキサスホールデム。サイドポット・ミニマムレイズまで実装。">
+<link rel="stylesheet" href="src/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>♠️</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>テキサスホールデム</h1>
+  <div class="badges">
+    <span class="badge" id="badge-hand">ハンド 1</span>
+    <span class="badge" id="badge-blinds">50 / 100</span>
+    <span class="badge badge-street" id="badge-street">プリフロップ</span>
+  </div>
+  <a class="topbar-link" href="../">🃏 大富豪</a>
+  <a class="topbar-link" href="../fishing/">🎣 釣り</a>
+  <button type="button" class="ghost" id="btn-settings" aria-haspopup="dialog">設定</button>
+</header>
+
+<main class="felt">
+  <section class="seats" id="seats" aria-label="対戦相手"></section>
+
+  <section class="board" aria-live="polite">
+    <div class="pot"><span class="pot-label">ポット</span> <span id="pot">0</span></div>
+    <div class="community" id="community"></div>
+    <p class="board-note" id="board-note"></p>
+  </section>
+
+  <section class="me" aria-label="あなたの席">
+    <div class="me-head">
+      <span class="seat-name">あなた <span class="chip-tag" id="my-badge"></span></span>
+      <span class="seat-chips" id="my-chips">10,000</span>
+    </div>
+    <div class="me-body">
+      <div class="hole" id="my-hole"></div>
+      <div class="me-info">
+        <p class="strength" id="strength"></p>
+        <p class="to-call" id="to-call"></p>
+      </div>
+    </div>
+
+    <div class="controls" id="controls">
+      <button type="button" id="btn-fold">フォールド</button>
+      <button type="button" id="btn-check" class="primary">チェック</button>
+      <button type="button" id="btn-raise" class="primary">レイズ</button>
+      <button type="button" id="btn-hint" class="ghost">ヒント</button>
+    </div>
+
+    <div class="raise-panel hidden" id="raise-panel">
+      <div class="raise-row">
+        <input type="range" id="raise-slider" min="0" max="100" step="1" aria-label="レイズ額">
+        <output class="raise-amount" id="raise-amount">0</output>
+      </div>
+      <div class="raise-presets">
+        <button type="button" data-fraction="0.5">1/2 ポット</button>
+        <button type="button" data-fraction="0.75">3/4 ポット</button>
+        <button type="button" data-fraction="1">ポット</button>
+        <button type="button" data-fraction="max">オールイン</button>
+        <button type="button" id="raise-confirm" class="primary">この額でレイズ</button>
+        <button type="button" id="raise-cancel" class="ghost">やめる</button>
+      </div>
+    </div>
+
+    <p class="message" id="message" role="status"></p>
+  </section>
+</main>
+
+<aside class="sidebar">
+  <h2>スタック</h2>
+  <ol class="stacks" id="stacks"></ol>
+  <h2>実況</h2>
+  <ol class="log" id="log" aria-live="polite"></ol>
+</aside>
+
+<dialog id="dlg-result">
+  <h2 id="result-title">ハンド終了</h2>
+  <div id="result-body"></div>
+  <menu>
+    <button type="button" class="primary" id="result-next">次のハンドへ</button>
+  </menu>
+</dialog>
+
+<dialog id="dlg-over">
+  <h2 id="over-title">ゲーム終了</h2>
+  <p id="over-body"></p>
+  <menu>
+    <button type="button" class="primary" id="over-restart">もう一度あそぶ</button>
+  </menu>
+</dialog>
+
+<dialog id="dlg-settings">
+  <h2>設定</h2>
+  <p class="hint">変更すると新しいゲームを始めます。</p>
+  <form id="settings-form">
+    <label><span>持ちチップ</span>
+      <select name="startingChips">
+        <option value="5000">5,000（短期決戦）</option>
+        <option value="10000">10,000（標準）</option>
+        <option value="20000">20,000（じっくり）</option>
+      </select>
+    </label>
+    <label><span>ブラインド</span>
+      <select name="blinds">
+        <option value="25">25 / 50</option>
+        <option value="50">50 / 100</option>
+        <option value="100">100 / 200</option>
+      </select>
+    </label>
+    <label><span>ブラインドの上昇</span>
+      <select name="blindUpEvery">
+        <option value="0">上げない</option>
+        <option value="10">10 ハンドごとに倍</option>
+        <option value="20">20 ハンドごとに倍</option>
+      </select>
+    </label>
+    <menu>
+      <button type="button" class="ghost" id="settings-cancel">閉じる</button>
+      <button type="submit" class="primary">この設定で始める</button>
+    </menu>
+  </form>
+</dialog>
+
+<script type="module" src="src/ui.js"></script>
+</body>
+</html>
