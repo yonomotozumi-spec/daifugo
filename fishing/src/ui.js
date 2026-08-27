@@ -1,10 +1,11 @@
 /** 画面まわりとゲーム進行。抽選と判定は engine.js、描画は scene.js に任せる。 */
 
 import {
-  FIGHT, FISH, HOOK_WINDOW, RARITY, SHOP_KINDS, SPOTS,
-  Fight, biteDelay, buy, collectionProgress, createPlayer, equip,
-  equippedLure, equippedRod, fishOfSpot, normalizePlayer, owns, pickFish,
-  recordCatch, sell, sizeLabel, sizeTitle, spotById, timeAt, yen,
+  FIGHT, FISH, RARITY, SHOP_KINDS, SPOTS,
+  Fight, advanceWeather, biteDelay, buy, collectionProgress, createPlayer, equip,
+  equippedLure, equippedRod, fishOfSpot, gearEffects, hookWindow,
+  normalizePlayer, owns, pickFish, recordCatch, rollEvent, sell, sizeLabel,
+  sizeTitle, spotById, tickEvent, timeAt, weatherById, yen,
 } from './engine.js';
 import { CAST_TIME, LAND_TIME, Scene } from './scene.js';
 
@@ -33,6 +34,7 @@ let lastFrame = 0;
 let shopKind = 'rod';
 let displayMoney = player.money;
 let announcedSpot = null;   // 「行けるようになった」と知らせ済みの釣り場
+let happening = null;       // いま起きているできごと { event, left }
 
 // ---------------------------------------------------------------- セーブ
 
@@ -104,6 +106,12 @@ function renderHud() {
   $('badge-spot').textContent = spot.name;
   $('badge-time').textContent = time.label;
   $('badge-time').dataset.time = time.id;
+  const weather = weatherById(player.weather);
+  const badge = $('badge-weather');
+  badge.querySelector('.w-emoji').textContent = weather.emoji;
+  badge.querySelector('.w-label').textContent = weather.label;
+  badge.dataset.weather = weather.id;
+  badge.title = `${weather.label}：${weather.note}`;
   $('badge-rod').textContent = equippedRod(player).name;
   $('badge-lure').textContent = equippedLure(player).name;
   $('stat-casts').textContent = player.casts;
@@ -113,6 +121,18 @@ function renderHud() {
   $('stat-book').textContent = `${prog.found} / ${prog.total}`;
   scene.setSpot(player.spot);
   scene.setTime(time.id);
+  scene.setWeather(player.weather);
+  renderEvent();
+}
+
+/** いま起きているできごとの帯。 */
+function renderEvent() {
+  const banner = $('event-banner');
+  banner.hidden = !happening;
+  if (!happening) return;
+  const { event, left } = happening;
+  banner.textContent = `${event.emoji} ${event.label}（あと ${left} 投）`;
+  banner.dataset.event = event.id;
 }
 
 /**
@@ -147,6 +167,22 @@ function cast() {
   hideResult();
   player.casts += 1;
   player.timeIndex += 1;
+
+  // 天気は数投ごとに変わる
+  const { weather, changed } = advanceWeather(player, Math.random);
+  if (changed) log(`天気が${weather.label}になった。${weather.note}`, weather.id === 'storm' ? 'bad' : '');
+
+  // できごとは、何も起きていないときだけ引く
+  if (!happening) {
+    const event = rollEvent(Math.random, { active: happening });
+    if (event) {
+      happening = { event, left: event.casts };
+      log(event.start, 'epic');
+      setStatus(`${event.emoji} ${event.start}`, 'alert');
+      buzz([20, 40, 20]);
+    }
+  }
+
   renderHud();
   save();
 
@@ -161,7 +197,13 @@ function cast() {
     setAction('合わせる', { disabled: false });
     setStatus('アタリを待とう…');
     setHint('ウキが沈んだ瞬間に合わせる');
-    const delay = biteDelay(Math.random, { lure: equippedLure(player), timeIndex: player.timeIndex });
+    const delay = biteDelay(Math.random, {
+      lure: equippedLure(player),
+      timeIndex: player.timeIndex,
+      gear: gearEffects(player),
+      weather: weatherById(player.weather),
+      event: happening?.event,
+    });
     timer = setTimeout(startBite, delay * 1000);
   }, CAST_TIME * 1000);
 }
@@ -172,13 +214,16 @@ function startBite() {
     rod: equippedRod(player),
     lure: equippedLure(player),
     timeIndex: player.timeIndex,
+    gear: gearEffects(player),
+    weather: weatherById(player.weather),
+    event: happening?.event,
   });
   setMode(MODE.bite);
   scene.bite();
   buzz(35);
   setAction('合わせる！', { hot: true });
   setStatus('きた！ 合わせろ！', 'alert');
-  timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), HOOK_WINDOW * 1000);
+  timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), hookWindow(gearEffects(player)) * 1000);
 }
 
 function missBite(text) {
@@ -197,6 +242,8 @@ function hook() {
   const rod = equippedRod(player);
   fight = new Fight({
     fish: pending.fish, rod, sizeRatio: pending.sizeRatio, rng: Math.random,
+    gear: gearEffects(player),
+    weather: weatherById(player.weather),
   });
   setMode(MODE.fight);
   scene.hook(fight);
@@ -239,6 +286,12 @@ function finishFight(phase) {
 
 function backToIdle() {
   clearTimeout(timer);
+  // 1 投ぶん進める。終わったら知らせる
+  if (happening) {
+    const next = tickEvent(happening);
+    if (!next) log(happening.event.end);
+    happening = next;
+  }
   scene.reset();
   setMode(MODE.idle);
   setAction('キャスト');
@@ -380,6 +433,8 @@ function itemStats(kind, item) {
       ['得意な場所', spots || '—'],
     ];
   }
+  if (kind === 'gear') return effectRows(item.effects);
+
   const all = fishOfSpot(item.id);
   const found = all.filter((f) => player.records[f.id]).length;
   return [
@@ -389,8 +444,40 @@ function itemStats(kind, item) {
   ];
 }
 
+/** 道具の効果を「○○ +12%」の形に直す。 */
+const EFFECT_LABELS = {
+  sell: ['売値', (v) => `+${Math.round(v * 100)}%`],
+  escapeCut: ['逃げにくさ', (v) => `+${Math.round(v * 100)}%`],
+  hookWindow: ['合わせの猶予', (v) => `+${v.toFixed(2)}秒`],
+  biteSpeed: ['アタリの速さ', (v) => `+${Math.round(v * 100)}%`],
+  rarityBonus: ['レア度アップ', (v) => `+${Math.round(v * 100)}%`],
+  junkCut: ['ゴミ回避', (v) => `+${Math.round(v * 100)}%`],
+  line: ['ライン強度', (v) => `+${v.toFixed(1)}`],
+  reel: ['寄せ速度', (v) => `+${Math.round(v * 100)}`],
+  barH: ['バーの広さ', (v) => `+${Math.round(v * 100)}`],
+};
+
+function effectRows(effects) {
+  return Object.entries(effects)
+    .filter(([, v]) => v)
+    .map(([key, v]) => {
+      const [label, format] = EFFECT_LABELS[key] ?? [key, (x) => String(x)];
+      return [label, format(v)];
+    });
+}
+
 function renderShop() {
   $('shop-money').textContent = yen(player.money);
+
+  // 道具のタブでは、いま効いている合計を上に出す
+  const totals = effectRows(gearEffects(player));
+  const summary = $('gear-summary');
+  summary.hidden = shopKind !== 'gear';
+  if (shopKind === 'gear') {
+    summary.textContent = totals.length
+      ? `いまの効果： ${totals.map(([k, v]) => `${k} ${v}`).join('　')}`
+      : 'まだ道具を持っていません。買うとずっと効きます';
+  }
   for (const tab of document.querySelectorAll('.tab')) {
     tab.classList.toggle('active', tab.dataset.kind === shopKind);
   }
@@ -406,7 +493,7 @@ function renderShop() {
 
     const head = document.createElement('div');
     head.className = 'shop-item-head';
-    head.innerHTML = `<h3>${item.name}</h3>`;
+    head.innerHTML = `<h3>${item.emoji ? `${item.emoji} ` : ''}${item.name}</h3>`;
     const price = document.createElement('span');
     price.className = 'shop-price';
     price.textContent = has ? '購入済み' : yen(item.price);
@@ -429,10 +516,14 @@ function renderShop() {
     btn.type = 'button';
     btn.className = has ? 'ghost' : 'primary';
     const equipLabel = shopKind === 'spot' ? '移動する' : '装備する';
-    btn.textContent = equipped ? (shopKind === 'spot' ? '釣り中' : '装備中') : has ? equipLabel : '買う';
-    btn.disabled = equipped || (!has && player.money < item.price);
+    // 道具は付け替えがないので、持っていれば「使用中」で固定
+    btn.textContent = shopKind === 'gear'
+      ? (has ? '使用中' : '買う')
+      : equipped ? (shopKind === 'spot' ? '釣り中' : '装備中') : has ? equipLabel : '買う';
+    btn.disabled = (shopKind === 'gear' && has) || equipped || (!has && player.money < item.price);
     btn.addEventListener('click', () => {
       if (has) {
+        if (shopKind === 'gear') return;
         equip(player, shopKind, item.id);
         shopMsg(`${item.name}に${shopKind === 'spot' ? '移動した' : 'かえた'}`);
         log(shopKind === 'spot' ? `${item.name}へ移動した` : `${item.name}を装備した`);

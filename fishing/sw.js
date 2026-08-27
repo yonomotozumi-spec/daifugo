@@ -4,7 +4,7 @@
  * 中身を更新したときは CACHE の版を上げること。
  */
 
-const CACHE = 'fishing-v4';
+const CACHE = 'fishing-v6';
 
 const ASSETS = [
   './',

@@ -52,6 +52,12 @@ const SPOT_STYLE = {
     depth: 0.2, ground: '#3c4650', bank: '#8f9296', ray: 0.45, weed: 3,
     tint: 'rgba(30,105,120,0.22)', current: 0.4, rocks: 3, gulls: 3, glow: 0,
   },
+  ice: {
+    depth: 0.12, ground: '#8fa3b0', bank: '#e4eef4', ray: 0.5, weed: 1,
+    tint: 'rgba(150,225,245,0.22)', current: 0, rocks: 0, gulls: 0, glow: 0,
+    sheet: true, snow: 0.6,          // 水面が凍っていて、いつも雪がちらつく
+    hill: '#e6eef3',                 // 遠景は雪山
+  },
   sea: {
     depth: 0.24, ground: '#2a4a5a', bank: '#8a8272', ray: 0.75, weed: 2,
     tint: 'rgba(20,70,150,0.20)', current: 0.3, rocks: 1, gulls: 4, glow: 0,
@@ -60,6 +66,11 @@ const SPOT_STYLE = {
     depth: 0, ground: '#ecdcb4', bank: '#e6d5a8', ray: 1, weed: 2,
     tint: 'rgba(90,235,220,0.30)', tintBottom: 'rgba(30,190,200,0.42)',
     current: 0.2, rocks: 2, gulls: 2, glow: 0, palms: 3,
+  },
+  cave: {
+    depth: 0.5, ground: '#2b2b33', bank: '#5a5248', ray: 0.12, weed: 0,
+    tint: 'rgba(20,45,65,0.35)', current: 0, rocks: 1, gulls: 0, glow: 14,
+    roof: true,                      // 空ではなく岩の天井
   },
   deep: {
     depth: 0.68, ground: '#101a28', bank: '#2a3040', ray: 0.1, weed: 0,
@@ -81,6 +92,8 @@ export class Scene {
     this.mode = 'idle';        // idle | cast | wait | bite | fight | land | fail
     this.spot = 'pond';
     this.time = 'noon';
+    this.weather = 'sunny';
+    this.bolt = 0;             // 稲妻の残り時間
     this.fight = null;
     this.holding = false;
 
@@ -173,6 +186,7 @@ export class Scene {
 
   setSpot(spotId) { this.spot = spotId; }
   setTime(timeId) { this.time = timeId; }
+  setWeather(weatherId) { this.weather = weatherId || 'sunny'; }
 
   setMode(mode) {
     this.mode = mode;
@@ -347,6 +361,7 @@ export class Scene {
     this.modeT += dt;
     this.shake = Math.max(0, this.shake - dt * 26);
     this.flash = Math.max(0, this.flash - dt * 1.6);
+    this.bolt = Math.max(0, this.bolt - dt);
 
     // 竿の角度はいつも目標へ追いつく
     this.rodAngle += (this.rodTarget - this.rodAngle) * Math.min(1, dt * 9);
@@ -467,12 +482,17 @@ export class Scene {
     }
     ctx.clearRect(-20, -20, w + 40, h + 40);
 
-    this.#drawSky(pal, waterY);
-    this.#drawHills(pal, style, waterY);
-    this.#drawPalms(pal, style, waterY);
+    if (style.roof) {
+      this.#drawRoof(style, waterY);
+    } else {
+      this.#drawSky(pal, waterY);
+      this.#drawHills(pal, style, waterY);
+      this.#drawPalms(pal, style, waterY);
+    }
     this.#drawWater(pal, style, waterY);
     this.#drawUnderwater(pal, style, waterY);
     this.#drawSurface(pal, waterY);
+    this.#drawIceSheet(style, waterY, pal);
     this.#drawRocks(style, waterY);
     this.#drawRipples();
     this.#drawDock(style, waterY);
@@ -480,6 +500,7 @@ export class Scene {
     this.#drawAngler();
     this.#drawLanding();
     this.#drawParticles();
+    this.#drawWeather(pal, style, waterY);
     this.#drawFightGauge();
     ctx.restore();
 
@@ -561,7 +582,7 @@ export class Scene {
   #drawHills(pal, style, waterY) {
     const { ctx, w } = this;
     if (this.spot === 'deep') return;
-    ctx.fillStyle = pal.hill;
+    ctx.fillStyle = style.hill || pal.hill;
     ctx.globalAlpha = 0.75;
     ctx.beginPath();
     ctx.moveTo(0, waterY);
@@ -829,6 +850,233 @@ export class Scene {
       ctx.moveTo(x + s * 0.9, waterY + 4);
       ctx.quadraticCurveTo(x + s * 1.5, waterY + 6 + Math.sin(this.t * 6 + i) * 1.5, x + s * 2.3, waterY + 4);
       ctx.stroke();
+    }
+  }
+
+
+  /** 岩の天井と鍾乳石（地底湖）。空の代わりに描く。 */
+  #drawRoof(style, waterY) {
+    const { ctx, w } = this;
+    const g = ctx.createLinearGradient(0, 0, 0, waterY);
+    g.addColorStop(0, '#161318');
+    g.addColorStop(0.6, '#2c2620');
+    g.addColorStop(1, '#3b332a');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, waterY);
+
+    // ぶら下がる鍾乳石
+    ctx.fillStyle = '#4a4036';
+    for (let i = 0; i < 14; i++) {
+      const x = ((i * 137) % 100) / 100 * w;
+      const len = 30 + ((i * 53) % 70);
+      const wide = 8 + ((i * 29) % 12);
+      ctx.beginPath();
+      ctx.moveTo(x - wide / 2, 0);
+      ctx.lineTo(x + wide / 2, 0);
+      ctx.lineTo(x, len);
+      ctx.closePath();
+      ctx.fill();
+      // 先から落ちるしずく
+      const drip = (this.t * 40 + i * 90) % 260;
+      if (drip < waterY - len) {
+        ctx.fillStyle = 'rgba(180,230,255,0.55)';
+        ctx.beginPath();
+        ctx.arc(x, len + drip, 1.8, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = '#4a4036';
+      }
+    }
+
+    // 奥のほうに光る水晶
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const x = w * (0.2 + i * 0.16);
+      const y = waterY - 26 - ((i * 37) % 40);
+      const pulse = 0.5 + 0.5 * Math.sin(this.t * 1.4 + i);
+      const gl = ctx.createRadialGradient(x, y, 0, x, y, 26);
+      gl.addColorStop(0, `rgba(120,220,255,${0.35 * pulse})`);
+      gl.addColorStop(1, 'rgba(120,220,255,0)');
+      ctx.fillStyle = gl;
+      ctx.beginPath();
+      ctx.arc(x, y, 26, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** 凍った水面と、糸を落とす穴（氷上の湖）。 */
+  #drawIceSheet(style, waterY, pal) {
+    if (!style.sheet) return;
+    const { ctx, w } = this;
+    const holeX = this.lure.x || w * 0.6;
+    const rx = 36;
+    const ry = 12;
+
+    // 一面の氷
+    ctx.fillStyle = '#eef5f9';
+    ctx.fillRect(0, waterY - 9, w, 20);
+    ctx.fillStyle = 'rgba(150,180,200,0.5)';
+    ctx.fillRect(0, waterY + 9, w, 4);
+
+    // ひび
+    ctx.strokeStyle = 'rgba(150,190,215,0.55)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 7; i++) {
+      const x = ((i * 173) % 100) / 100 * w;
+      ctx.beginPath();
+      ctx.moveTo(x, waterY - 8);
+      ctx.lineTo(x + 20, waterY + 8);
+      ctx.stroke();
+    }
+
+    // 開けた穴。中はいつも水
+    ctx.fillStyle = pal.water[1];
+    ctx.beginPath();
+    ctx.ellipse(holeX, waterY + 1, rx, ry, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(holeX, waterY - 1, rx * 0.9, ry * 0.7, 0, 0, TAU);
+    ctx.fill();
+    // ふちの氷
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(holeX, waterY + 1, rx, ry, 0, 0, TAU);
+    ctx.stroke();
+    // 水面の揺れ
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(holeX, waterY + 2 + Math.sin(this.t * 2) * 1.5, rx * 0.6, ry * 0.5, 0, 0, TAU);
+    ctx.stroke();
+  }
+
+  /**
+   * 天気。雨・雪・霧・嵐をまとめてここで描く。
+   * 粒はためずに、時間から位置を出している（軽いので端末を選ばない）。
+   */
+  #drawWeather(pal, style, waterY) {
+    const { ctx, w, h } = this;
+    const weather = this.weather;
+    const snowy = style.snow > 0;
+
+    if (weather === 'cloudy' || weather === 'rain' || weather === 'storm') {
+      const dim = weather === 'storm' ? 0.34 : weather === 'rain' ? 0.2 : 0.12;
+
+      // 空を覆う厚い雲。曇りでも一目で分かるように
+      if (!style.roof) {
+        const heavy = weather !== 'cloudy';
+        const dark = weather === 'storm' ? '60,64,84' : weather === 'rain' ? '96,104,124' : '150,158,172';
+        for (let row = 0; row < (heavy ? 2 : 1); row++) {
+          const y = 12 + row * 26;
+          const drift = (this.t * (6 + row * 4)) % (w + 260) - 130;
+          for (let i = 0; i < 7; i++) {
+            const x = drift + i * (w / 5.5);
+            const r = 42 + ((i * 17 + row * 9) % 26);
+            ctx.fillStyle = `rgba(${dark},${heavy ? 0.75 : 0.5})`;
+            ctx.beginPath();
+            ctx.ellipse(x, y, r, r * 0.5, 0, 0, TAU);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x + r * 0.6, y + 8, r * 0.7, r * 0.4, 0, 0, TAU);
+            ctx.fill();
+          }
+        }
+      }
+
+      ctx.fillStyle = `rgba(20,30,50,${dim})`;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // 雨と雪は空にだけ降らせる（水の中に線が入ると台無しになる）
+    const rainy = weather === 'rain' || weather === 'storm';
+    if (rainy || snowy) {
+      const heavy = weather === 'storm';
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, w, waterY + 4);
+      ctx.clip();
+
+      // ばらけた位置を出すためのハッシュ
+      const hash = (n) => {
+        const x = Math.sin(n * 12.9898) * 43758.5453;
+        return x - Math.floor(x);
+      };
+
+      if (snowy) {
+        const count = rainy ? (heavy ? 150 : 90) : 45;
+        const fall = rainy ? 90 : 55;
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        for (let i = 0; i < count; i++) {
+          const x = (hash(i) * w + Math.sin(this.t * 0.6 + i) * 24 + this.t * 10) % (w + 40) - 20;
+          const y = (hash(i + 99) * waterY + this.t * fall) % (waterY + 20) - 10;
+          ctx.beginPath();
+          ctx.arc(x, y, 1.2 + hash(i + 7) * 1.6, 0, TAU);
+          ctx.fill();
+        }
+      } else {
+        const count = heavy ? 150 : 80;
+        const speed = heavy ? 1400 : 900;
+        const slant = heavy ? 8 : 3;
+        const len = heavy ? 20 : 13;
+        ctx.strokeStyle = heavy ? 'rgba(200,230,255,0.55)' : 'rgba(200,230,255,0.4)';
+        ctx.lineWidth = heavy ? 1.5 : 1.1;
+        ctx.beginPath();
+        for (let i = 0; i < count; i++) {
+          const x = (hash(i) * (w + 120) + this.t * (heavy ? 90 : 30)) % (w + 120) - 60;
+          const y = (hash(i + 51) * waterY + this.t * speed) % (waterY + 40) - 20;
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + slant, y + len);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // 水面をたたく跡（出しすぎると泡だらけに見えるので控えめに）
+      if (rainy && this.#rnd() < (heavy ? 0.18 : 0.09)) {
+        this.ring(this.#rnd() * w, waterY + this.#rnd() * 4, 0.12);
+      }
+    }
+
+    if (weather === 'fog') {
+      // うっすら白い帯が流れる
+      ctx.save();
+      for (let i = 0; i < 4; i++) {
+        const y = h * (0.1 + i * 0.22) + Math.sin(this.t * 0.3 + i) * 12;
+        const g = ctx.createLinearGradient(0, y - 60, 0, y + 60);
+        g.addColorStop(0, 'rgba(230,240,245,0)');
+        g.addColorStop(0.5, `rgba(230,240,245,${0.3 - i * 0.03})`);
+        g.addColorStop(1, 'rgba(230,240,245,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, y - 60, w, 120);
+      }
+      ctx.fillStyle = 'rgba(225,235,240,0.18)';
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+
+    if (weather === 'storm') {
+      // ときどき光る
+      if (this.bolt <= 0 && this.#rnd() < 0.004) {
+        this.bolt = 0.28;
+        this.flash = Math.max(this.flash, 0.85);
+        this.flashColor = '235,245,255';
+        this.boltX = this.#rnd() * w;
+      }
+      if (this.bolt > 0) {
+        ctx.strokeStyle = `rgba(255,255,255,${Math.min(1, this.bolt * 4)})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        let x = this.boltX;
+        ctx.moveTo(x, 0);
+        for (let y = 0; y < waterY; y += 26) {
+          x += (this.#rnd() - 0.5) * 34;
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
     }
   }
 

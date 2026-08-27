@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  FIGHT, FISH, LURES, RARITY, RODS, SPOTS,
+  FIGHT, FISH, GEAR, LURES, NO_GEAR, RARITY, RODS, SPOTS,
   Fight, biteDelay, buy, collectionProgress, createPlayer, equip,
-  equippedLure, equippedRod, fishById, fishOfSpot, mulberry32, normalizePlayer,
-  owns, pickFish, priceOf, recordCatch, sell, sizeTitle, timeAt, weightedPick,
+  equippedLure, equippedRod, fishById, fishOfSpot, gearById, gearEffects,
+  hookWindow, mulberry32, normalizePlayer, owns, pickFish, priceOf, recordCatch,
+  sell, sizeTitle, timeAt, weightedPick,
+  EVENTS, WEATHERS, WEATHER_SPAN, advanceWeather, rollEvent, tickEvent, weatherById,
 } from '../src/engine.js';
 
 const lure = (id) => LURES.find((l) => l.id === id);
@@ -392,13 +394,14 @@ test('池だけで遊んでいても、すぐ次の釣り場に行ける', () =>
   assert.ok(p.money >= river.price, `15回釣っても渓流に行けない（${p.money}円 / ${river.price}円）`);
 });
 
-test('釣り場は 6 か所あって、値段が段階的に上がる', () => {
-  assert.equal(SPOTS.length, 6);
-  assert.deepEqual(SPOTS.map((s) => s.id), ['pond', 'river', 'harbor', 'sea', 'island', 'deep']);
+test('釣り場は 8 か所あって、順番に値段が上がる', () => {
+  assert.equal(SPOTS.length, 8);
+  assert.deepEqual(SPOTS.map((s) => s.id),
+    ['pond', 'river', 'harbor', 'ice', 'sea', 'island', 'cave', 'deep']);
 });
 
-test('魚は全部で 55 種以上いて、どの釣り場にも 7 種以上いる', () => {
-  assert.ok(FISH.length >= 55, `魚が少ない（${FISH.length} 種）`);
+test('魚は全部で 75 種以上いて、どの釣り場にも 7 種以上いる', () => {
+  assert.ok(FISH.length >= 75, `魚が少ない（${FISH.length} 種）`);
   for (const spot of SPOTS) {
     const list = fishOfSpot(spot.id);
     assert.ok(list.length >= 7, `${spot.name}の魚が少ない（${list.length} 種）`);
@@ -436,4 +439,287 @@ test('のべ竿とミミズでも池なら稼げて、最初の竿に手が届�
     sell(p, result);
   }
   assert.ok(p.money >= RODS[1].price, `40回釣っても次の竿が買えない（${p.money}円）`);
+});
+
+// ------------------------------------------------------------------ 道具
+
+const withGear = (...ids) => gearEffects({ gears: ids });
+
+test('道具のデータが壊れていない', () => {
+  const ids = GEAR.map((g) => g.id);
+  assert.equal(new Set(ids).size, ids.length, 'ID が重複している');
+  assert.ok(GEAR.length >= 8, `道具が少ない（${GEAR.length} 個）`);
+  for (const g of GEAR) {
+    assert.ok(g.price > 0, `${g.name}: 値段がおかしい`);
+    assert.ok(g.name && g.note && g.emoji, `${g.name}: 表示用の値が欠けている`);
+    const effects = Object.entries(g.effects ?? {});
+    assert.ok(effects.length > 0, `${g.name}: 効果がない`);
+    for (const [key, value] of effects) {
+      assert.ok(key in NO_GEAR, `${g.name}: 知らない効果 ${key}`);
+      assert.ok(value > 0, `${g.name}: ${key} が正の値でない`);
+    }
+  }
+  for (let i = 1; i < GEAR.length; i++) {
+    assert.ok(GEAR[i].price > GEAR[i - 1].price, `${GEAR[i].name}の値段が前より安い`);
+  }
+});
+
+test('道具を持っていなければ効果はゼロ', () => {
+  assert.deepEqual(gearEffects(createPlayer()), NO_GEAR);
+  assert.deepEqual(gearEffects(null), NO_GEAR);
+  assert.deepEqual(withGear('knowniot'), NO_GEAR, '知らない道具は無視する');
+});
+
+test('道具の効果は足し算で重なる', () => {
+  const one = withGear('cooler');
+  const both = withGear('cooler', 'charm');
+  assert.equal(one.sell, gearById('cooler').effects.sell);
+  assert.equal(both.sell, gearById('cooler').effects.sell + gearById('charm').effects.sell);
+  assert.equal(both.rarityBonus, gearById('charm').effects.rarityBonus);
+});
+
+test('クーラーボックスがあると高く売れる', () => {
+  const draw = (gear) => {
+    const rng = mulberry32(1234);
+    return pickFish('pond', { rng, rod: rod('nobe'), lure: lure('worm'), gear });
+  };
+  const plain = draw(NO_GEAR);
+  const cooled = draw(withGear('cooler'));
+  assert.equal(plain.fish.id, cooled.fish.id, '前提：同じ魚が釣れること');
+  assert.ok(cooled.price > plain.price, `高くなっていない ${plain.price} → ${cooled.price}`);
+  assert.equal(cooled.price, Math.round(plain.price * 1.12));
+});
+
+test('お守りでレアが出やすくなる', () => {
+  const rate = (gear) => {
+    const rng = mulberry32(77);
+    let rare = 0;
+    for (let i = 0; i < 4000; i++) {
+      const { fish } = pickFish('sea', { rng, rod: rod('legend'), lure: lure('worm'), gear, timeIndex: 1 });
+      if (['rare', 'epic', 'legendary'].includes(fish.rarity)) rare++;
+    }
+    return rare;
+  };
+  assert.ok(rate(withGear('charm')) > rate(NO_GEAR), 'レア率が上がっていない');
+});
+
+test('魚群探知機でゴミが減る', () => {
+  const junk = (gear) => {
+    const rng = mulberry32(55);
+    let count = 0;
+    for (let i = 0; i < 3000; i++) {
+      const { fish } = pickFish('harbor', { rng, rod: rod('carbon'), lure: lure('worm'), gear });
+      if (fish.junk) count++;
+    }
+    return count;
+  };
+  assert.ok(junk(withGear('sonar')) < junk(NO_GEAR), 'ゴミ率が下がっていない');
+});
+
+test('コマセバケツでアタリが早くなる', () => {
+  const avg = (gear) => {
+    const rng = mulberry32(9);
+    let sum = 0;
+    for (let i = 0; i < 400; i++) sum += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, gear });
+    return sum / 400;
+  };
+  assert.ok(avg(withGear('chum')) < avg(NO_GEAR), 'アタリが早くなっていない');
+});
+
+test('偏光グラスで合わせの猶予が伸びる', () => {
+  assert.ok(hookWindow(withGear('glasses')) > hookWindow(NO_GEAR));
+  assert.equal(hookWindow(withGear('glasses')), hookWindow(NO_GEAR) + 0.45);
+  assert.equal(hookWindow(), hookWindow(NO_GEAR), '既定は効果なしと同じ');
+});
+
+test('道具は竿の性能に上乗せされる', () => {
+  const base = new Fight({ fish: fishById('buri'), rod: rod('nobe'), sizeRatio: 0.5 });
+  const geared = new Fight({
+    fish: fishById('buri'), rod: rod('nobe'), sizeRatio: 0.5,
+    gear: withGear('ereel', 'spool', 'bignet', 'net'),
+  });
+  assert.ok(geared.rod.reel > base.rod.reel, '寄せ速度が上がっていない');
+  assert.ok(geared.rod.line > base.rod.line, 'ライン強度が上がっていない');
+  assert.ok(geared.barH > base.barH, 'バーが広がっていない');
+  assert.ok(geared.escapeRate < base.escapeRate, '逃げ足が落ちていない');
+  // 元の竿のデータは書き換えない
+  assert.equal(rod('nobe').reel, 0.42);
+});
+
+test('タモ網があると逃げられにくい', () => {
+  const run = (gear) => {
+    const fight = new Fight({
+      fish: fishById('bass'), rod: rod('nobe'), sizeRatio: 0.5, rng: mulberry32(8), gear,
+    });
+    return simulate(fight, () => false, 30);
+  };
+  const plain = new Fight({
+    fish: fishById('bass'), rod: rod('nobe'), sizeRatio: 0.5, rng: mulberry32(8),
+  });
+  const netted = new Fight({
+    fish: fishById('bass'), rod: rod('nobe'), sizeRatio: 0.5, rng: mulberry32(8), gear: withGear('net'),
+  });
+  assert.ok(netted.escapeRate < plain.escapeRate);
+  assert.equal(run(NO_GEAR), FIGHT.escaped, '前提：何もしなければ逃げられる');
+});
+
+test('道具は買えるが、付け替えはない', () => {
+  const p = createPlayer({ money: 5000 });
+  assert.equal(buy(p, 'gear', 'cooler').ok, true);
+  assert.equal(p.money, 5000 - gearById('cooler').price);
+  assert.ok(owns(p, 'gear', 'cooler'));
+  assert.equal(buy(p, 'gear', 'cooler').ok, false, '二重購入できてしまう');
+  assert.equal(equip(p, 'gear', 'cooler'), false, '道具に装備の概念はない');
+  assert.equal(buy(p, 'gear', 'charm').ok, false, '所持金以上に買えてしまう');
+});
+
+test('道具もセーブデータに残り、知らないものは捨てる', () => {
+  const p = createPlayer({ money: 99999 });
+  buy(p, 'gear', 'cooler');
+  buy(p, 'gear', 'net');
+  const round = normalizePlayer(JSON.parse(JSON.stringify(p)));
+  assert.deepEqual(round.gears, ['cooler', 'net']);
+  assert.deepEqual(normalizePlayer({ gears: ['cooler', 'ghost'] }).gears, ['cooler']);
+  assert.deepEqual(normalizePlayer({ gears: 'クーラー' }).gears, []);
+  assert.deepEqual(normalizePlayer({}).gears, []);
+});
+
+// ------------------------------------------------------------------ 天気
+
+test('天気のデータが壊れていない', () => {
+  const ids = WEATHERS.map((w) => w.id);
+  assert.equal(new Set(ids).size, ids.length, 'ID が重複している');
+  assert.ok(WEATHERS.length >= 5, `天気が少ない（${WEATHERS.length} 種）`);
+  for (const w of WEATHERS) {
+    assert.ok(w.weight > 0, `${w.label}: 出現の重みがない`);
+    assert.ok(w.label && w.emoji && w.note, `${w.label}: 表示用の値が欠けている`);
+    assert.ok(w.stress >= 0 && w.stress <= 1, `${w.label}: ラインへの負荷が範囲外`);
+  }
+  assert.equal(weatherById('sunny').id, 'sunny');
+  assert.equal(weatherById('しらない天気').id, 'sunny', '知らない天気は晴れに倒す');
+});
+
+test('天気は数投ごとに変わり、しばらく続く', () => {
+  const rng = mulberry32(21);
+  const p = createPlayer();
+  const [min, max] = WEATHER_SPAN;
+
+  const first = advanceWeather(p, rng);
+  assert.equal(first.changed, true, '最初のキャストで天気が決まらない');
+  assert.ok(p.weatherLeft >= min && p.weatherLeft <= max, `持ちが範囲外: ${p.weatherLeft}`);
+
+  // 持ちが尽きるまでは変わらない（残り回数は先に控えておく）
+  const id = p.weather;
+  const remaining = p.weatherLeft - 1;
+  let changes = 0;
+  for (let i = 0; i < remaining; i++) {
+    if (advanceWeather(p, rng).changed) changes++;
+  }
+  assert.equal(changes, 0, '持ちが残っているのに天気が変わった');
+  assert.equal(p.weather, id);
+  assert.equal(advanceWeather(p, rng).changed, true, '持ちが尽きても変わらない');
+});
+
+test('長く続ければどの天気も出る', () => {
+  const rng = mulberry32(5);
+  const p = createPlayer();
+  const seen = new Set();
+  for (let i = 0; i < 600; i++) seen.add(advanceWeather(p, rng).weather.id);
+  for (const w of WEATHERS) assert.ok(seen.has(w.id), `${w.label}が一度も出ない`);
+});
+
+test('雨はアタリが早く、霧はレアが出やすい', () => {
+  const avgDelay = (weather) => {
+    const rng = mulberry32(31);
+    let sum = 0;
+    for (let i = 0; i < 400; i++) sum += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, weather });
+    return sum / 400;
+  };
+  assert.ok(avgDelay(weatherById('rain')) < avgDelay(weatherById('sunny')), '雨でアタリが早くなっていない');
+
+  const rareRate = (weather) => {
+    const rng = mulberry32(64);
+    let rare = 0;
+    for (let i = 0; i < 4000; i++) {
+      const { fish } = pickFish('sea', { rng, rod: rod('legend'), lure: lure('worm'), weather, timeIndex: 1 });
+      if (['rare', 'epic', 'legendary'].includes(fish.rarity)) rare++;
+    }
+    return rare;
+  };
+  assert.ok(rareRate(weatherById('fog')) > rareRate(weatherById('sunny')), '霧でレアが増えていない');
+});
+
+test('嵐はラインが切れやすい', () => {
+  const strainAfter = (weather) => {
+    const fight = new Fight({
+      fish: fishById('buri'), rod: rod('nobe'), sizeRatio: 0.8, rng: mulberry32(12), weather,
+    });
+    for (let i = 0; i < 30; i++) fight.update(1 / 60, true);
+    return fight.strain;
+  };
+  assert.ok(strainAfter(weatherById('storm')) > strainAfter(weatherById('sunny')), '嵐で負荷が増えていない');
+  assert.equal(new Fight({ fish: fishById('buri'), rod: rod('nobe') }).stress, 1, '天気なしなら負荷は等倍');
+});
+
+test('天気はセーブされ、壊れていれば晴れに戻す', () => {
+  const p = createPlayer();
+  advanceWeather(p, mulberry32(3));
+  const round = normalizePlayer(JSON.parse(JSON.stringify(p)));
+  assert.equal(round.weather, p.weather);
+  assert.equal(round.weatherLeft, p.weatherLeft);
+  assert.equal(normalizePlayer({ weather: '大雪' }).weather, 'sunny');
+  assert.equal(normalizePlayer({ weatherLeft: 999 }).weatherLeft, 20, '長すぎる持ちは丸める');
+});
+
+// ------------------------------------------------------------------ できごと
+
+test('できごとのデータが壊れていない', () => {
+  for (const event of Object.values(EVENTS)) {
+    assert.ok(event.chance > 0 && event.chance < 0.5, `${event.label}: 起きる確率が極端`);
+    assert.ok(event.casts >= 1, `${event.label}: 続くキャスト数がおかしい`);
+    assert.ok(event.label && event.emoji && event.start && event.end);
+  }
+});
+
+test('できごとはたまに起きるが、起きている最中は引かない', () => {
+  const rng = mulberry32(2);
+  let hits = 0;
+  for (let i = 0; i < 2000; i++) if (rollEvent(rng)) hits++;
+  assert.ok(hits > 0, '一度も起きない');
+  assert.ok(hits < 2000 * 0.3, `起きすぎ（${hits} / 2000）`);
+  assert.equal(rollEvent(() => 0, { active: { event: EVENTS.fever } }), null, '重ねて起きてしまう');
+});
+
+test('できごとはキャストのたびに減って、終わる', () => {
+  let state = { event: EVENTS.fever, left: 2 };
+  state = tickEvent(state);
+  assert.equal(state.left, 1);
+  assert.equal(tickEvent(state), null, '終わらない');
+  assert.equal(tickEvent(null), null);
+});
+
+test('大漁タイムはアタリが早くレアが出やすい', () => {
+  const rng = mulberry32(41);
+  let plain = 0;
+  let fever = 0;
+  for (let i = 0; i < 300; i++) {
+    plain += biteDelay(rng, { lure: lure('worm'), timeIndex: 1 });
+    fever += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, event: EVENTS.fever });
+  }
+  assert.ok(fever < plain, 'アタリが早くなっていない');
+  assert.ok(EVENTS.fever.rarityBonus > 0);
+});
+
+test('ヌシの気配ではレア以上しか掛からない', () => {
+  const rng = mulberry32(17);
+  for (const spot of SPOTS) {
+    for (let i = 0; i < 60; i++) {
+      const { fish } = pickFish(spot.id, {
+        rng, rod: rod('legend'), lure: lure('worm'), event: EVENTS.nushi,
+      });
+      assert.ok(['rare', 'epic', 'legendary'].includes(fish.rarity),
+        `${spot.name}で ${fish.name}（${fish.rarity}）が出た`);
+      assert.ok(!fish.junk, `${spot.name}でゴミが出た`);
+    }
+  }
 });
