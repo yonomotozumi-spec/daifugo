@@ -476,6 +476,16 @@ $('btn-hint').addEventListener('click', showHint);
 $('btn-settings').addEventListener('click', openSettings);
 $('settings-cancel').addEventListener('click', () => $('dlg-settings').close());
 
+// ルールとゲームの長さを最初の状態に戻し、点数も 0 から数え直す
+$('settings-reset').addEventListener('click', () => {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(MATCH_KEY);
+  } catch { /* 消せなくても続ける */ }
+  $('dlg-settings').close();
+  newGame({ ...DEFAULT_RULES }, DEFAULT_LENGTH);
+});
+
 $('settings-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const rules = { ...game.rules };

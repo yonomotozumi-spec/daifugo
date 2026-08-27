@@ -732,6 +732,57 @@ function frame(now) {
   }
 }
 
+// ---------------------------------------------------------------- はじめから
+
+/** いま何を持っているか。消す前に見せて、勘違いで消させないようにする。 */
+function resetSummary() {
+  const caught = Object.keys(player.records).length;
+  const charms = Object.values(player.charms ?? {}).reduce((a, b) => a + b, 0);
+  return [
+    `所持金 ${yen(player.money)}`,
+    `図鑑 ${caught} 種（${player.catches} 匹）`,
+    `竿 ${player.rods.length} 本 ・ ルアー ${player.lures.length} 個 ・ 道具 ${player.gears.length} 個`,
+    `行ける釣り場 ${player.spots.length} か所`,
+    ...(charms ? [`お札 ${charms} 枚`] : []),
+  ];
+}
+
+function openReset() {
+  const list = $('reset-list');
+  list.replaceChildren();
+  for (const line of resetSummary()) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    list.append(li);
+  }
+  $('dlg-reset').showModal();
+}
+
+/** 保存を消して、最初の状態に戻す。 */
+function resetSave() {
+  clearTimeout(timer);
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* 消せなくても続ける */ }
+
+  player = createPlayer();
+  fight = null;
+  pending = null;
+  holding = false;
+  happening = null;
+  charmState = null;
+  announcedSpot = null;
+  displayMoney = 0;
+
+  hideResult();
+  $('log').replaceChildren();
+  scene.setHolding(false);
+  renderMoney(false);
+  backToIdle();
+  save();
+
+  log('はじめからやり直した。今日はいい天気だ。');
+  setStatus('はじめからやり直した', 'good');
+}
+
 // ---------------------------------------------------------------- アプリとして使う
 
 /** 手にも伝える。対応していない端末では黙って無視される。 */
@@ -899,6 +950,13 @@ function init() {
   });
   window.addEventListener('blur', release);
 
+  $('btn-reset').addEventListener('click', openReset);
+  $('reset-cancel').addEventListener('click', () => $('dlg-reset').close());
+  $('reset-ok').addEventListener('click', () => {
+    $('dlg-reset').close();
+    resetSave();
+  });
+
   $('btn-shop').addEventListener('click', () => openShop());
   $('btn-book').addEventListener('click', openBook);
   $('btn-sell').addEventListener('click', sellResult);
@@ -923,6 +981,7 @@ function init() {
     get happening() { return happening; },
     scene,
     save,
+    reset: resetSave,
     render() { renderMoney(false); renderHud(); },
   };
 

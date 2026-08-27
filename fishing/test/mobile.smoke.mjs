@@ -270,8 +270,13 @@ async function checkWideMoney() {
       await page.waitForFunction(() => window.fishing);
       await page.evaluate((m) => { window.fishing.player.money = m; window.fishing.render(); }, money);
       await page.waitForTimeout(150);
-      const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-      if (over > 1) fail(`${width}px / ${money.toLocaleString()}円 で ${over}px はみ出している`);
+      const box = await page.evaluate(() => ({
+        over: document.documentElement.scrollWidth - window.innerWidth,
+        wallet: Math.round(document.getElementById('wallet').getBoundingClientRect().height),
+      }));
+      if (box.over > 1) fail(`${width}px / ${money.toLocaleString()}円 で ${box.over}px はみ出している`);
+      // 桁が増えると所持金が縦に折り返して読めなくなることがあった
+      if (box.wallet > 40) fail(`${width}px / ${money.toLocaleString()}円 で所持金が縦に潰れている (${box.wallet}px)`);
       await ctx.close();
     }
   }

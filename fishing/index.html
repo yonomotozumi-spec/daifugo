@@ -104,6 +104,7 @@
     <h2>釣り日誌</h2>
     <ol class="log" id="log" aria-live="polite"></ol>
   </section>
+  <button type="button" class="ghost reset-btn" id="btn-reset" aria-haspopup="dialog">🗑️ はじめから</button>
   <a class="topbar-link only-narrow sheet-link" href="../">🃏 大富豪であそぶ</a>
 </aside>
 
@@ -134,6 +135,18 @@
   </header>
   <div class="book" id="book"></div>
   <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<!-- はじめからやり直す -->
+<dialog id="dlg-reset">
+  <header class="dlg-head"><h2>🗑️ はじめからやり直す</h2></header>
+  <p class="reset-warn">この端末に保存されている釣りの記録を、すべて消します。</p>
+  <ul class="reset-list" id="reset-list"></ul>
+  <p class="reset-note">消したデータは元に戻せません。大富豪の成績には影響しません。</p>
+  <menu class="reset-actions">
+    <button type="button" class="ghost" id="reset-cancel">やめる</button>
+    <button type="button" class="danger" id="reset-ok">消してはじめる</button>
+  </menu>
 </dialog>
 
 <!-- iPhone / iPad 向けのインストール手順 -->

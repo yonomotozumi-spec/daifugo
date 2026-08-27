@@ -536,6 +536,31 @@ dialog[open] { animation: dlgIn 0.28s cubic-bezier(0.2, 1.3, 0.4, 1); }
   font-weight: 700;
 }
 
+/* はじめからやり直す */
+.reset-btn { width: 100%; font-size: 12.5px; opacity: 0.75; }
+.reset-btn:hover { opacity: 1; }
+
+button.danger {
+  background: linear-gradient(180deg, #d9534f, #b3312d);
+  border-color: rgba(255, 255, 255, 0.3);
+  font-weight: 700;
+}
+
+button.danger:hover:not(:disabled) { background: linear-gradient(180deg, #e8635f, #c43b37); }
+
+.reset-warn { margin: 0 0 8px; font-size: 14px; }
+
+.reset-list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--gold);
+}
+
+.reset-note { margin: 0; font-size: 12px; opacity: 0.7; line-height: 1.6; }
+.reset-actions { display: flex; gap: 10px; justify-content: flex-end; margin: 14px 0 0; padding: 0; }
+
 /* お札（使い切り）のカード */
 .charm-actions { display: flex; gap: 8px; margin-top: 4px; }
 .charm-actions button { flex: 1; }
@@ -702,7 +727,8 @@ dialog form { margin-top: 12px; text-align: right; }
   .wallet-value { font-size: 17px; }
   /* さらに狭い端末では、バッジ側がはみ出さずに削れるようにしておく */
   .badges { margin-left: 0; gap: 4px; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
-  .wallet { min-width: 0; }
+  /* 所持金は縦に折り返させない（桁が積み上がると読めなくなる） */
+  .wallet { white-space: nowrap; flex: 0 0 auto; }
   .badge { font-size: 11px; padding: 3px 7px; white-space: nowrap; }
   .badge-gear { display: none; }        /* 竿とルアーはショップで確認できる */
   .badge-weather .w-label { display: none; }   /* 天気は絵文字だけ */
@@ -773,7 +799,32 @@ dialog form { margin-top: 12px; text-align: right; }
   }
 
   .tabs .tab { flex: 1; padding: 9px 6px; font-size: 12.5px; }
-  /* お札（使い切り）のカード */
+  /* はじめからやり直す */
+.reset-btn { width: 100%; font-size: 12.5px; opacity: 0.75; }
+.reset-btn:hover { opacity: 1; }
+
+button.danger {
+  background: linear-gradient(180deg, #d9534f, #b3312d);
+  border-color: rgba(255, 255, 255, 0.3);
+  font-weight: 700;
+}
+
+button.danger:hover:not(:disabled) { background: linear-gradient(180deg, #e8635f, #c43b37); }
+
+.reset-warn { margin: 0 0 8px; font-size: 14px; }
+
+.reset-list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--gold);
+}
+
+.reset-note { margin: 0; font-size: 12px; opacity: 0.7; line-height: 1.6; }
+.reset-actions { display: flex; gap: 10px; justify-content: flex-end; margin: 14px 0 0; padding: 0; }
+
+/* お札（使い切り）のカード */
 .charm-actions { display: flex; gap: 8px; margin-top: 4px; }
 .charm-actions button { flex: 1; }
 .charm-item.owned { background: rgba(247, 201, 72, 0.1); border-color: rgba(247, 201, 72, 0.35); }
@@ -816,7 +867,7 @@ dialog form { margin-top: 12px; text-align: right; }
  * 小さい端末では、所持金の桁が増えると 1 行に収まらない。
  * バッジをまとめて 2 行目に逃がして、はみ出しを起こさないようにする。
  */
-@media (max-width: 365px) {
+@media (max-width: 400px) {
   .topbar { flex-wrap: wrap; row-gap: 6px; }
   .wallet { order: 1; }
   .topbar-actions { order: 2; }
