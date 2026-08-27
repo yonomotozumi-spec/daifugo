@@ -536,6 +536,28 @@ dialog[open] { animation: dlgIn 0.28s cubic-bezier(0.2, 1.3, 0.4, 1); }
   font-weight: 700;
 }
 
+/* お札（使い切り）のカード */
+.charm-actions { display: flex; gap: 8px; margin-top: 4px; }
+.charm-actions button { flex: 1; }
+.charm-item.owned { background: rgba(247, 201, 72, 0.1); border-color: rgba(247, 201, 72, 0.35); }
+
+/* ヌシ（ボス） */
+.result-card[data-boss="true"] {
+  border-color: #ffd43b;
+  box-shadow: 0 0 60px rgba(255, 212, 59, 0.55);
+  background: linear-gradient(180deg, rgba(58, 40, 10, 0.96), rgba(24, 14, 4, 0.97));
+}
+
+.result-boss {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--gold);
+  line-height: 1.6;
+}
+
+.book-cell.boss { border-color: var(--gold); background: rgba(247, 201, 72, 0.1); }
+.book-cell .book-title { color: var(--gold); }
+
 /* 道具タブの「いまの効果」 */
 .gear-summary {
   margin: 0 0 10px;
@@ -680,6 +702,7 @@ dialog form { margin-top: 12px; text-align: right; }
   .wallet-value { font-size: 17px; }
   /* さらに狭い端末では、バッジ側がはみ出さずに削れるようにしておく */
   .badges { margin-left: 0; gap: 4px; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+  .wallet { min-width: 0; }
   .badge { font-size: 11px; padding: 3px 7px; white-space: nowrap; }
   .badge-gear { display: none; }        /* 竿とルアーはショップで確認できる */
   .badge-weather .w-label { display: none; }   /* 天気は絵文字だけ */
@@ -750,7 +773,29 @@ dialog form { margin-top: 12px; text-align: right; }
   }
 
   .tabs .tab { flex: 1; padding: 9px 6px; font-size: 12.5px; }
-  /* 道具タブの「いまの効果」 */
+  /* お札（使い切り）のカード */
+.charm-actions { display: flex; gap: 8px; margin-top: 4px; }
+.charm-actions button { flex: 1; }
+.charm-item.owned { background: rgba(247, 201, 72, 0.1); border-color: rgba(247, 201, 72, 0.35); }
+
+/* ヌシ（ボス） */
+.result-card[data-boss="true"] {
+  border-color: #ffd43b;
+  box-shadow: 0 0 60px rgba(255, 212, 59, 0.55);
+  background: linear-gradient(180deg, rgba(58, 40, 10, 0.96), rgba(24, 14, 4, 0.97));
+}
+
+.result-boss {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--gold);
+  line-height: 1.6;
+}
+
+.book-cell.boss { border-color: var(--gold); background: rgba(247, 201, 72, 0.1); }
+.book-cell .book-title { color: var(--gold); }
+
+/* 道具タブの「いまの効果」 */
 .gear-summary {
   margin: 0 0 10px;
   padding: 8px 12px;
@@ -765,6 +810,17 @@ dialog form { margin-top: 12px; text-align: right; }
 .shop-list { grid-template-columns: 1fr; max-height: 56dvh; }
   .book { max-height: 62dvh; }
   .book-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+}
+
+/*
+ * 小さい端末では、所持金の桁が増えると 1 行に収まらない。
+ * バッジをまとめて 2 行目に逃がして、はみ出しを起こさないようにする。
+ */
+@media (max-width: 365px) {
+  .topbar { flex-wrap: wrap; row-gap: 6px; }
+  .wallet { order: 1; }
+  .topbar-actions { order: 2; }
+  .badges { order: 3; flex-basis: 100%; overflow: visible; }
 }
 
 /* 横向きにした電話。高さが足りないので操作部を小さくする */

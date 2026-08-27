@@ -31,6 +31,9 @@ export function weightedPick(items, weights, rng = Math.random) {
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
+/** ルアー・時間帯・道具・天気・できごと・お札の効果を足し合わせる。 */
+const sumOf = (key, mods) => mods.reduce((total, m) => total + (m?.[key] ?? 0), 0);
+
 // ---------------------------------------------------------------- レア度
 
 export const RARITY = {
@@ -295,6 +298,70 @@ export function gearEffects(player) {
   return total;
 }
 
+// ---------------------------------------------------------------- お札（使い切り）
+
+/**
+ * 一度使うと無くなる道具。ためたお金の使いどころ。
+ * 効果の書きかたは、できごと（EVENTS）と同じ枠に足される。
+ */
+export const CHARMS = [
+  {
+    id: 'chumball', name: '撒き餌の玉', price: 800, emoji: '🍡', casts: 1,
+    effect: { biteSpeed: 0.5, rarityBonus: 0.15 },
+    note: '次の 1 投だけ、アタリがすぐ来る',
+  },
+  {
+    id: 'lucky', name: '幸運の札', price: 5000, emoji: '🍀', casts: 1,
+    effect: { rarityBonus: 0.6 },
+    note: '次の 1 投だけ、珍しい魚が寄ってくる',
+  },
+  {
+    id: 'safety', name: '安全ピンの札', price: 6000, emoji: '🧷', casts: 1,
+    effect: { noSnap: true },
+    note: '次の 1 投だけ、ラインが切れない',
+  },
+  {
+    id: 'timing', name: '時合いの札', price: 9000, emoji: '🌟', casts: 5,
+    effect: { rarityBonus: 0.25, biteSpeed: 0.35 },
+    note: '5 投のあいだ、大漁タイムになる',
+  },
+  {
+    id: 'boss', name: 'ヌシの札', price: 25000, emoji: '👑', casts: 1,
+    effect: { minRarity: 'epic', bossBoost: 10 },
+    note: '次の 1 投だけ、その釣り場のヌシが出やすくなる',
+  },
+];
+
+export const charmById = (id) => CHARMS.find((c) => c.id === id) || null;
+
+/** 持っている枚数。 */
+export const charmCount = (player, id) => Math.max(0, Math.floor(player?.charms?.[id] ?? 0));
+
+/** 買う。何枚でも買える。 */
+export function buyCharm(player, id, count = 1) {
+  const charm = charmById(id);
+  if (!charm) return { ok: false, error: '不明なお札です' };
+  const n = Math.max(1, Math.floor(count));
+  const cost = charm.price * n;
+  if (player.money < cost) {
+    return { ok: false, error: `${(cost - player.money).toLocaleString()}円 足りません` };
+  }
+  player.money -= cost;
+  player.charms = { ...player.charms, [id]: charmCount(player, id) + n };
+  return { ok: true, charm, count: n, money: player.money };
+}
+
+/**
+ * 1 枚使う。持っていなければ null。
+ * 抽選やファイトに渡すのは charm.effect のほう（charm そのものではない）。
+ */
+export function useCharm(player, id) {
+  const charm = charmById(id);
+  if (!charm || charmCount(player, id) < 1) return null;
+  player.charms = { ...player.charms, [id]: charmCount(player, id) - 1 };
+  return charm;
+}
+
 // ---------------------------------------------------------------- 魚
 
 /**
@@ -313,7 +380,7 @@ export const FISH = [
   { id: 'namazu', name: 'ナマズ', emoji: '🐟', spot: 'pond', rarity: 'rare', weight: [1, 7], length: [40, 105], value: 900, power: 3, speed: 0.30, escape: 0.40, color: '#5a5241' },
   { id: 'kingyo', name: '出目金', emoji: '🐠', spot: 'pond', rarity: 'rare', weight: [0.02, 0.25], length: [5, 18], value: 1200, power: 1, speed: 0.62, escape: 0.30, color: '#e2543a' },
   { id: 'suppon', name: 'スッポン', emoji: '🐢', spot: 'pond', rarity: 'epic', weight: [0.8, 5], length: [20, 45], value: 4200, power: 3, speed: 0.26, escape: 0.46, color: '#4e5a43' },
-  { id: 'nushi', name: '池の主', emoji: '🐉', spot: 'pond', rarity: 'legendary', weight: [12, 40], length: [110, 210], value: 16000, power: 5, speed: 0.52, escape: 0.56, color: '#3f6f8f' },
+  { id: 'nushi', name: '池の主', emoji: '🐉', spot: 'pond', rarity: 'legendary', weight: [12, 40], length: [110, 210], value: 16000, power: 5, speed: 0.52, escape: 0.56, color: '#3f6f8f' , boss: true, title: '沼の古老', tale: 'この池に何十年も棲みついている' },
 
   // ------------------------------------------------ 渓流
   { id: 'ayu', name: 'アユ', emoji: '🐟', spot: 'river', rarity: 'common', weight: [0.05, 0.4], length: [12, 30], value: 180, power: 1, speed: 0.48, escape: 0.30, color: '#93a88c' },
@@ -324,7 +391,7 @@ export const FISH = [
   { id: 'unagi', name: 'ウナギ', emoji: '🐍', spot: 'river', rarity: 'rare', weight: [0.3, 2.5], length: [40, 120], value: 2600, power: 3, speed: 0.66, escape: 0.44, color: '#4a4a3c' },
   { id: 'sakuramasu', name: 'サクラマス', emoji: '🌸', spot: 'river', rarity: 'rare', weight: [1, 6], length: [40, 78], value: 3000, power: 4, speed: 0.58, escape: 0.42, color: '#c08497' },
   { id: 'ito', name: 'イトウ', emoji: '🐟', spot: 'river', rarity: 'epic', weight: [3, 22], length: [60, 150], value: 9000, power: 4, speed: 0.50, escape: 0.50, color: '#6a7f6a' },
-  { id: 'kappa', name: 'カッパの皿', emoji: '🥏', spot: 'river', rarity: 'legendary', weight: [0.2, 1], length: [18, 30], value: 26000, power: 2, speed: 0.72, escape: 0.58, color: '#7fc8a9' },
+  { id: 'kappa', name: 'カッパの皿', emoji: '🥏', spot: 'river', rarity: 'legendary', weight: [0.2, 1], length: [18, 30], value: 26000, power: 4, speed: 0.86, escape: 0.62, color: '#7fc8a9' , boss: true, title: '川の悪戯', tale: '皿だけが流れてくる。持ち主は誰も見ていない' },
 
   // ------------------------------------------------ 漁港
   { id: 'haze', name: 'ハゼ', emoji: '🐟', spot: 'harbor', rarity: 'common', weight: [0.02, 0.3], length: [8, 26], value: 200, power: 1, speed: 0.44, escape: 0.28, color: '#a09477' },
@@ -337,7 +404,7 @@ export const FISH = [
   { id: 'tachiuo', name: 'タチウオ', emoji: '🗡️', spot: 'harbor', rarity: 'rare', weight: [0.3, 3.2], length: [60, 155], value: 4200, power: 3, speed: 0.64, escape: 0.46, color: '#c8cdd4' },
   { id: 'suzuki', name: 'スズキ', emoji: '🐟', spot: 'harbor', rarity: 'rare', weight: [1, 9], length: [40, 105], value: 5200, power: 4, speed: 0.58, escape: 0.48, color: '#8d99a6' },
   { id: 'kanpachi', name: 'カンパチ', emoji: '🐟', spot: 'harbor', rarity: 'epic', weight: [3, 25], length: [50, 130], value: 11000, power: 4, speed: 0.66, escape: 0.52, color: '#b9a05e' },
-  { id: 'kinkurodai', name: '黄金のクロダイ', emoji: '✨', spot: 'harbor', rarity: 'legendary', weight: [3, 12], length: [50, 80], value: 48000, power: 5, speed: 0.60, escape: 0.58, color: '#e8c15a' },
+  { id: 'kinkurodai', name: '黄金のクロダイ', emoji: '✨', spot: 'harbor', rarity: 'legendary', weight: [3, 12], length: [50, 80], value: 48000, power: 5, speed: 0.60, escape: 0.58, color: '#e8c15a' , boss: true, title: '堤防の主', tale: '月夜にだけ姿を見せる金色の魚' },
 
   // ------------------------------------------------ 氷上の湖
   { id: 'wakasagi', name: 'ワカサギ', emoji: '🐟', spot: 'ice', rarity: 'common', weight: [0.01, 0.12], length: [5, 16], value: 400, power: 1, speed: 0.42, escape: 0.26, color: '#cfd8e2' },
@@ -349,7 +416,7 @@ export const FISH = [
   { id: 'kurione', name: 'クリオネ', emoji: '🧊', spot: 'ice', rarity: 'rare', weight: [0.005, 0.05], length: [1, 5], value: 9000, power: 1, speed: 0.70, escape: 0.34, color: '#ffb3c7' },
   { id: 'ohyou', name: 'オヒョウ', emoji: '🐟', spot: 'ice', rarity: 'rare', weight: [10, 180], length: [80, 260], value: 11000, power: 5, speed: 0.34, escape: 0.48, color: '#6b6f6a' },
   { id: 'kurokawa', name: 'イトウ（氷下）', emoji: '🐟', spot: 'ice', rarity: 'epic', weight: [5, 30], length: [70, 160], value: 24000, power: 4, speed: 0.52, escape: 0.52, color: '#5f7a63' },
-  { id: 'chouzame', name: 'シロチョウザメ', emoji: '🐊', spot: 'ice', rarity: 'legendary', weight: [40, 400], length: [150, 500], value: 95000, power: 5, speed: 0.46, escape: 0.58, color: '#9aa7a0' },
+  { id: 'chouzame', name: 'シロチョウザメ', emoji: '🐊', spot: 'ice', rarity: 'legendary', weight: [40, 400], length: [150, 500], value: 95000, power: 5, speed: 0.46, escape: 0.58, color: '#9aa7a0' , boss: true, title: '氷底の帝王', tale: '氷の下を悠然と泳ぐ古代魚' },
 
   // ------------------------------------------------ 海
   { id: 'aji', name: 'アジ', emoji: '🐟', spot: 'sea', rarity: 'common', weight: [0.1, 0.9], length: [15, 42], value: 520, power: 1, speed: 0.44, escape: 0.32, color: '#9aa7ae' },
@@ -362,7 +429,7 @@ export const FISH = [
   { id: 'buri', name: 'ブリ', emoji: '🐟', spot: 'sea', rarity: 'rare', weight: [2, 14], length: [50, 130], value: 5200, power: 4, speed: 0.60, escape: 0.44, color: '#6c8ba0' },
   { id: 'same', name: 'ホホジロザメ', emoji: '🦈', spot: 'sea', rarity: 'epic', weight: [80, 900], length: [200, 560], value: 18000, power: 5, speed: 0.46, escape: 0.54, color: '#5b6a74' },
   { id: 'manbou', name: 'マンボウ', emoji: '🐡', spot: 'sea', rarity: 'epic', weight: [40, 600], length: [120, 320], value: 15000, power: 5, speed: 0.22, escape: 0.48, color: '#93a2a8' },
-  { id: 'kajiki', name: 'クロカジキ', emoji: '🗡️', spot: 'sea', rarity: 'legendary', weight: [60, 500], length: [200, 450], value: 52000, power: 5, speed: 0.70, escape: 0.60, color: '#3d5a7a' },
+  { id: 'kajiki', name: 'クロカジキ', emoji: '🗡️', spot: 'sea', rarity: 'legendary', weight: [60, 500], length: [200, 450], value: 52000, power: 5, speed: 0.70, escape: 0.60, color: '#3d5a7a' , boss: true, title: '海の弾丸', tale: '船を引きずって走ると言われる' },
 
   // ------------------------------------------------ 南の島
   { id: 'clownfish', name: 'カクレクマノミ', emoji: '🐠', spot: 'island', rarity: 'common', weight: [0.02, 0.15], length: [4, 12], value: 1100, power: 1, speed: 0.58, escape: 0.32, color: '#f08a3c' },
@@ -374,7 +441,7 @@ export const FISH = [
   { id: 'umigame', name: 'アオウミガメ', emoji: '🐢', spot: 'island', rarity: 'rare', weight: [20, 130], length: [60, 145], value: 9500, power: 4, speed: 0.34, escape: 0.46, color: '#4b7a52' },
   { id: 'manta', name: 'オニイトマキエイ', emoji: '🐟', spot: 'island', rarity: 'epic', weight: [60, 600], length: [200, 520], value: 27000, power: 5, speed: 0.48, escape: 0.52, color: '#37506b' },
   { id: 'bashoukajiki', name: 'バショウカジキ', emoji: '🗡️', spot: 'island', rarity: 'epic', weight: [25, 90], length: [180, 330], value: 31000, power: 5, speed: 0.74, escape: 0.58, color: '#2f5f8f' },
-  { id: 'jinbee', name: 'ジンベエザメ', emoji: '🦈', spot: 'island', rarity: 'legendary', weight: [300, 2000], length: [400, 1200], value: 160000, power: 5, speed: 0.44, escape: 0.60, color: '#4a6274' },
+  { id: 'jinbee', name: 'ジンベエザメ', emoji: '🦈', spot: 'island', rarity: 'legendary', weight: [300, 2000], length: [400, 1200], value: 160000, power: 5, speed: 0.44, escape: 0.60, color: '#4a6274' , boss: true, title: '青の巨神', tale: '島の言い伝えに出てくる守り神' },
 
   // ------------------------------------------------ 地底湖
   { id: 'shirauo', name: 'チカイシラウオ', emoji: '🐟', spot: 'cave', rarity: 'common', weight: [0.01, 0.1], length: [4, 14], value: 2000, power: 1, speed: 0.50, escape: 0.32, color: '#e4e8ee' },
@@ -385,7 +452,7 @@ export const FISH = [
   { id: 'sanshouuo', name: 'オオサンショウウオ', emoji: '🦎', spot: 'cave', rarity: 'rare', weight: [3, 30], length: [50, 150], value: 12000, power: 4, speed: 0.24, escape: 0.50, color: '#6a6255' },
   { id: 'kaseki', name: '化石魚', emoji: '🦴', spot: 'cave', rarity: 'rare', weight: [0.5, 8], length: [20, 90], value: 20000, power: 3, speed: 0.30, escape: 0.46, color: '#c9bfa5' },
   { id: 'suishou', name: '水晶のかたまり', emoji: '💎', spot: 'cave', rarity: 'epic', weight: [0.3, 5], length: [10, 40], value: 42000, power: 2, speed: 0.14, escape: 0.40, color: '#a9d8ea' },
-  { id: 'chiteiryu', name: '地底湖のヌシ', emoji: '🐲', spot: 'cave', rarity: 'legendary', weight: [30, 200], length: [180, 420], value: 140000, power: 5, speed: 0.56, escape: 0.62, color: '#3f4a5a' },
+  { id: 'chiteiryu', name: '地底湖のヌシ', emoji: '🐲', spot: 'cave', rarity: 'legendary', weight: [30, 200], length: [180, 420], value: 140000, power: 5, speed: 0.56, escape: 0.62, color: '#3f4a5a' , boss: true, title: '闇を統べるもの', tale: '地底湖の底で待っている' },
 
   // ------------------------------------------------ 深海
   { id: 'kinmedai', name: 'キンメダイ', emoji: '🐠', spot: 'deep', rarity: 'common', weight: [0.5, 4], length: [25, 60], value: 1800, power: 2, speed: 0.40, escape: 0.36, color: '#d4544a' },
@@ -397,7 +464,7 @@ export const FISH = [
   { id: 'probe', name: '壊れた探査機', emoji: '🛰️', spot: 'deep', rarity: 'common', weight: [3, 20], length: [40, 120], value: 30, power: 2, speed: 0.07, escape: 0.12, color: '#7a828c', junk: true },
   { id: 'rabuka', name: 'ラブカ', emoji: '🦈', spot: 'deep', rarity: 'rare', weight: [8, 60], length: [100, 200], value: 14000, power: 4, speed: 0.52, escape: 0.50, color: '#4a4550' },
   { id: 'kinka', name: '沈没船の金貨', emoji: '🪙', spot: 'deep', rarity: 'epic', weight: [0.02, 0.4], length: [3, 8], value: 38000, power: 1, speed: 0.16, escape: 0.34, color: '#e0bb54' },
-  { id: 'coelacanth', name: 'シーラカンス', emoji: '🐊', spot: 'deep', rarity: 'legendary', weight: [25, 95], length: [110, 200], value: 120000, power: 5, speed: 0.50, escape: 0.62, color: '#4f6f6a' },
+  { id: 'coelacanth', name: 'シーラカンス', emoji: '🐊', spot: 'deep', rarity: 'legendary', weight: [25, 95], length: [110, 200], value: 120000, power: 5, speed: 0.50, escape: 0.62, color: '#4f6f6a' , boss: true, title: '太古の生き証人', tale: '一億年を泳ぎ続けてきた' },
 ];
 
 export const fishById = (id) => FISH.find((f) => f.id === id) || null;
@@ -413,23 +480,26 @@ export const fishOfSpot = (spotId) => FISH.filter((f) => f.spot === spotId);
  * @returns {{fish: object, weightKg: number, lengthCm: number, sizeRatio: number, price: number}}
  */
 export function pickFish(spotId, {
-  rng = Math.random, rod, lure, timeIndex = 1, gear = NO_GEAR, weather = null, event = null,
+  rng = Math.random, rod, lure, timeIndex = 1, gear = NO_GEAR,
+  weather = null, event = null, charm = null,
 } = {}) {
   const all = fishOfSpot(spotId);
   if (!all.length) throw new Error(`unknown spot: ${spotId}`);
 
-  // ヌシの気配のときはレア以上しか掛からない
-  const floor = event?.minRarity ? RARITY_ORDER.indexOf(event.minRarity) : -1;
+  // ヌシの気配やお札のときはレア以上しか掛からない
+  const minRarity = charm?.minRarity ?? event?.minRarity;
+  const floor = minRarity ? RARITY_ORDER.indexOf(minRarity) : -1;
   const rareOnly = floor >= 0
     ? all.filter((f) => !f.junk && RARITY_ORDER.indexOf(f.rarity) >= floor)
     : [];
   const candidates = rareOnly.length ? rareOnly : all;
 
   const time = timeAt(timeIndex);
-  const bonus = (lure?.rarityBonus ?? 0) + time.rarityBonus + (gear.rarityBonus ?? 0)
-    + (weather?.rarityBonus ?? 0) + (event?.rarityBonus ?? 0);
-  const junkCut = clamp((lure?.junkCut ?? 0) + (gear.junkCut ?? 0), 0, 0.95);
+  const mods = [lure, time, gear, weather, event, charm];
+  const bonus = sumOf('rarityBonus', mods);
+  const junkCut = clamp(sumOf('junkCut', mods), 0, 0.95);
   const power = rod?.power ?? 1;
+  const bossBoost = sumOf('bossBoost', mods);
 
   const weights = candidates.map((f) => {
     let w = RARITY[f.rarity].weight;
@@ -439,6 +509,8 @@ export function pickFish(spotId, {
     if (f.junk) w *= Math.max(0.05, 1 - junkCut);
     // 竿に対して強すぎる魚は掛かりにくい（掛かっても切られる）
     if (f.power > power + 1) w *= 0.3;
+    // ヌシの札を使っているとボスが寄ってくる
+    if (f.boss && bossBoost > 0) w *= bossBoost;
     return w;
   });
 
@@ -464,13 +536,11 @@ export function priceOf(fish, weightKg) {
 
 /** アタリが来るまでの秒数。 */
 export function biteDelay(rng = Math.random, {
-  lure, timeIndex = 1, gear = NO_GEAR, weather = null, event = null,
+  lure, timeIndex = 1, gear = NO_GEAR, weather = null, event = null, charm = null,
 } = {}) {
-  const speed = clamp(
-    (lure?.biteSpeed ?? 0) + timeAt(timeIndex).biteBonus + (gear.biteSpeed ?? 0)
-    + (weather?.biteBonus ?? 0) + (event?.biteSpeed ?? 0),
-    -0.3, 0.85,
-  );
+  const mods = [lure, timeAt(timeIndex), gear, weather, event, charm];
+  // 「アタリの速さ」の呼び名がデータによって違うので、両方を足す
+  const speed = clamp(sumOf('biteSpeed', mods) + sumOf('biteBonus', mods), -0.3, 0.85);
   return round2((0.9 + rng() * 3.6) * (1 - speed) + 0.35);
 }
 
@@ -496,7 +566,9 @@ export const FIGHT = {
  * update(dt, holding) を毎フレーム呼ぶだけ。0..1 の値しか持たないので描画側は好きに使える。
  */
 export class Fight {
-  constructor({ fish, rod, sizeRatio = 0.5, rng = Math.random, gear = NO_GEAR, weather = null }) {
+  constructor({
+    fish, rod, sizeRatio = 0.5, rng = Math.random, gear = NO_GEAR, weather = null, charm = null,
+  }) {
     this.fish = fish;
     // 道具のぶんを足した竿として扱う（描画側は rod をそのまま見ればよい）
     this.rod = {
@@ -512,6 +584,8 @@ export class Fight {
     this.escapeRate = fish.escape * (0.85 + sizeRatio * 0.35) * (1 - clamp(gear.escapeCut ?? 0, 0, 0.6));
     // 荒れた日ほどラインに負荷がかかる
     this.stress = 1 + clamp(weather?.stress ?? 0, 0, 1);
+    // 安全ピンの札を使っていれば、負荷がたまっても切れない
+    this.noSnap = Boolean(charm?.noSnap);
 
     this.barH = this.rod.barH;
     this.barY = 0.5;
@@ -525,7 +599,15 @@ export class Fight {
     this.phase = FIGHT.fighting;
     this.inBar = true;
     this.dash = 0; // 演出用：直前に走った量
+
+    // ボスは二段構え。半分まで寄せると本気を出す
+    this.boss = Boolean(fish.boss);
+    this.enraged = false;
+    this.justEnraged = false;   // 演出側が 1 回だけ拾うための合図
   }
+
+  /** ボスが暴れ出す寄せ具合。 */
+  static get ENRAGE_AT() { return 0.55; }
 
   /** バーの上端・下端（描画用）。 */
   get barTop() { return clamp(this.barY - this.barH / 2, 0, 1); }
@@ -536,9 +618,19 @@ export class Fight {
    * @param {boolean} holding リールを巻いているか
    */
   update(dt, holding) {
+    this.justEnraged = false;
     if (this.phase !== FIGHT.fighting) return this.phase;
     const step = Math.min(dt, 0.05);
     this.time += step;
+
+    // ボスは半分まで寄せられると暴れ出す。速く、逃げ足も強くなる
+    if (this.boss && !this.enraged && this.progress >= Fight.ENRAGE_AT) {
+      this.enraged = true;
+      this.justEnraged = true;
+      this.speed *= 1.45;
+      this.escapeRate *= 1.35;
+      this.nextMove = 0;
+    }
 
     // --- 寄せバー：押すと上がり、離すと落ちる
     this.barV += (holding ? -1.9 : 1.5) * step;
@@ -576,6 +668,7 @@ export class Fight {
     this.progress = clamp(this.progress, 0, 1);
     this.strain = clamp(this.strain, 0, 1);
 
+    if (this.noSnap) this.strain = Math.min(this.strain, 0.97);
     if (this.strain >= 1) this.phase = FIGHT.snapped;
     else if (this.progress >= 1) this.phase = FIGHT.caught;
     else if (this.progress <= 0) this.phase = FIGHT.escaped;
@@ -595,6 +688,7 @@ export function createPlayer(over = {}) {
     lures: ['worm'],
     spots: ['pond'],
     gears: [],
+    charms: {},   // お札の枚数
     rod: 'nobe',
     lure: 'worm',
     spot: 'pond',
@@ -701,6 +795,11 @@ export function normalizePlayer(raw) {
     lures: pickList(raw.lures, LURES, ['worm']),
     spots: pickList(raw.spots, SPOTS, ['pond']),
     gears: Array.isArray(raw.gears) ? raw.gears.filter((id) => gearById(id)) : [],
+    charms: Object.fromEntries(
+      Object.entries(raw.charms || {})
+        .filter(([id, n]) => charmById(id) && Number.isFinite(n) && n > 0)
+        .map(([id, n]) => [id, Math.min(99, Math.floor(n))]),
+    ),
     timeIndex: Number.isFinite(raw.timeIndex) ? Math.floor(raw.timeIndex) : 0,
     weather: WEATHERS.some((w) => w.id === raw.weather) ? raw.weather : 'sunny',
     weatherLeft: Number.isFinite(raw.weatherLeft) ? clamp(Math.floor(raw.weatherLeft), 0, 20) : 0,
@@ -727,6 +826,22 @@ export function normalizePlayer(raw) {
 // ---------------------------------------------------------------- 表示用
 
 export const yen = (v) => `${Math.round(v).toLocaleString('ja-JP')}円`;
+
+/**
+ * 狭い画面向けに桁を詰めた所持金。「12.3万」「1.20億」のようにする。
+ * 桁が増えると上部バーが横に伸びて、画面からはみ出してしまうため。
+ */
+export function shortMoney(value, narrow = true) {
+  const v = Math.round(value);
+  if (!narrow || v < 10000) return v.toLocaleString('ja-JP');
+  // 切り捨てにする。9,999,999 円が「1,000万」に見えると持ち金を勘違いする
+  const cut = (x, digits) => Math.floor(x * 10 ** digits) / 10 ** digits;
+  if (v < 100000000) {
+    const man = v / 10000;
+    return `${man < 100 ? cut(man, 1).toFixed(1) : Math.floor(man).toLocaleString('ja-JP')}万`;
+  }
+  return `${cut(v / 100000000, 2).toFixed(2)}億`;
+}
 
 export function sizeLabel(result) {
   const kg = result.weightKg;

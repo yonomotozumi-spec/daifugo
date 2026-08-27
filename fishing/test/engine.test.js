@@ -8,6 +8,7 @@ import {
   hookWindow, mulberry32, normalizePlayer, owns, pickFish, priceOf, recordCatch,
   sell, sizeTitle, timeAt, weightedPick,
   EVENTS, WEATHERS, WEATHER_SPAN, advanceWeather, rollEvent, tickEvent, weatherById,
+  CHARMS, buyCharm, charmById, charmCount, shortMoney, useCharm,
 } from '../src/engine.js';
 
 const lure = (id) => LURES.find((l) => l.id === id);
@@ -722,4 +723,159 @@ test('ヌシの気配ではレア以上しか掛からない', () => {
       assert.ok(!fish.junk, `${spot.name}でゴミが出た`);
     }
   }
+});
+
+// ------------------------------------------------------------------ ヌシ（ボス）
+
+test('どの釣り場にもヌシが 1 体ずついる', () => {
+  const bosses = FISH.filter((f) => f.boss);
+  assert.equal(bosses.length, SPOTS.length, `ヌシの数が釣り場の数と合わない（${bosses.length}）`);
+  for (const spot of SPOTS) {
+    const list = fishOfSpot(spot.id).filter((f) => f.boss);
+    assert.equal(list.length, 1, `${spot.name}のヌシが ${list.length} 体`);
+    const boss = list[0];
+    assert.equal(boss.rarity, 'legendary', `${boss.name}が伝説になっていない`);
+    assert.ok(boss.title && boss.tale, `${boss.name}に二つ名か言い伝えがない`);
+    assert.ok(boss.power >= 4, `${boss.name}が弱すぎる`);
+  }
+});
+
+test('ヌシは半分まで寄せると暴れ出す', () => {
+  const boss = FISH.find((f) => f.boss);
+  const fight = new Fight({ fish: boss, rod: rod('legend'), sizeRatio: 0.5, rng: mulberry32(3) });
+  assert.equal(fight.boss, true);
+  assert.equal(fight.enraged, false);
+  const speed = fight.speed;
+  const escape = fight.escapeRate;
+
+  let sawSignal = 0;
+  let phase = FIGHT.fighting;
+  for (let i = 0; i < 60 * 60 && phase === FIGHT.fighting; i++) {
+    phase = fight.update(1 / 60, fight.barY > fight.fishY);
+    if (fight.justEnraged) {
+      sawSignal++;
+      assert.ok(fight.progress >= Fight.ENRAGE_AT, '半分も寄せていないのに暴れ出した');
+    }
+  }
+  assert.equal(sawSignal, 1, '暴れ出す合図が 1 回だけ出ていない');
+  assert.equal(fight.enraged, true);
+  assert.ok(fight.speed > speed, '暴れても速くなっていない');
+  assert.ok(fight.escapeRate > escape, '暴れても逃げ足が変わらない');
+});
+
+test('ふつうの魚は暴れない', () => {
+  const fight = new Fight({ fish: fishById('funa'), rod: rod('legend'), sizeRatio: 1, rng: mulberry32(4) });
+  assert.equal(fight.boss, false);
+  let phase = FIGHT.fighting;
+  for (let i = 0; i < 60 * 60 && phase === FIGHT.fighting; i++) {
+    phase = fight.update(1 / 60, fight.barY > fight.fishY);
+    assert.equal(fight.justEnraged, false);
+  }
+  assert.equal(fight.enraged, false);
+});
+
+// ------------------------------------------------------------------ お札
+
+test('お札のデータが壊れていない', () => {
+  const ids = CHARMS.map((c) => c.id);
+  assert.equal(new Set(ids).size, ids.length, 'ID が重複している');
+  for (const c of CHARMS) {
+    assert.ok(c.price > 0 && c.casts >= 1, `${c.name}: 値段か効く長さがおかしい`);
+    assert.ok(c.name && c.emoji && c.note, `${c.name}: 表示用の値が欠けている`);
+    assert.ok(Object.keys(c.effect ?? {}).length > 0, `${c.name}: 効果がない`);
+  }
+  for (let i = 1; i < CHARMS.length; i++) {
+    assert.ok(CHARMS[i].price > CHARMS[i - 1].price, `${CHARMS[i].name}の値段が前より安い`);
+  }
+});
+
+test('お札は何枚でも買えて、使うと減る', () => {
+  const p = createPlayer({ money: 10000 });
+  assert.equal(charmCount(p, 'chumball'), 0);
+
+  const res = buyCharm(p, 'chumball', 3);
+  assert.equal(res.ok, true);
+  assert.equal(p.money, 10000 - charmById('chumball').price * 3);
+  assert.equal(charmCount(p, 'chumball'), 3);
+
+  assert.equal(useCharm(p, 'chumball').id, 'chumball');
+  assert.equal(charmCount(p, 'chumball'), 2);
+  assert.equal(useCharm(p, 'ghost'), null, '知らないお札が使えてしまう');
+  assert.equal(useCharm(p, 'lucky'), null, '持っていないお札が使えてしまう');
+  assert.equal(buyCharm(p, 'boss', 1).ok, false, '所持金以上に買えてしまう');
+  assert.equal(buyCharm(p, 'ghost').ok, false);
+});
+
+test('幸運の札でレアが出やすくなる', () => {
+  const rate = (charm) => {
+    const rng = mulberry32(88);
+    let rare = 0;
+    for (let i = 0; i < 3000; i++) {
+      const { fish } = pickFish('river', { rng, rod: rod('legend'), lure: lure('worm'), charm, timeIndex: 1 });
+      if (['rare', 'epic', 'legendary'].includes(fish.rarity)) rare++;
+    }
+    return rare;
+  };
+  assert.ok(rate(charmById('lucky').effect) > rate(null), 'レア率が上がっていない');
+});
+
+test('撒き餌の玉でアタリが早くなる', () => {
+  const avg = (charm) => {
+    const rng = mulberry32(6);
+    let sum = 0;
+    for (let i = 0; i < 400; i++) sum += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, charm });
+    return sum / 400;
+  };
+  assert.ok(avg(charmById('chumball').effect) < avg(null), 'アタリが早くなっていない');
+});
+
+test('ヌシの札を使うとヌシが掛かりやすい', () => {
+  const charm = charmById('boss').effect;
+  for (const spotId of ['pond', 'sea', 'deep']) {
+    const rng = mulberry32(9);
+    let boss = 0;
+    for (let i = 0; i < 400; i++) {
+      const { fish } = pickFish(spotId, { rng, rod: rod('legend'), lure: lure('worm'), charm });
+      assert.ok(['epic', 'legendary'].includes(fish.rarity), `${fish.name} が掛かった`);
+      if (fish.boss) boss++;
+    }
+    assert.ok(boss > 400 * 0.2, `${spotId}: ヌシが出なさすぎる（${boss} / 400）`);
+    assert.ok(boss < 400 * 0.9, `${spotId}: ヌシが出すぎ（${boss} / 400）`);
+  }
+});
+
+test('安全ピンの札を使うとラインが切れない', () => {
+  const run = (charm) => {
+    const fight = new Fight({
+      fish: fishById('kajiki'), rod: rod('nobe'), sizeRatio: 0.8, rng: mulberry32(4), charm,
+    });
+    return simulate(fight, chase, 20);
+  };
+  assert.equal(run(null), FIGHT.snapped, '前提：ふだんは切れること');
+  assert.notEqual(run(charmById('safety').effect), FIGHT.snapped, 'お札を使っても切れた');
+});
+
+test('お札はセーブされ、おかしな枚数は直される', () => {
+  const p = createPlayer({ money: 50000 });
+  buyCharm(p, 'lucky', 2);
+  const round = normalizePlayer(JSON.parse(JSON.stringify(p)));
+  assert.equal(charmCount(round, 'lucky'), 2);
+  assert.deepEqual(normalizePlayer({ charms: { ghost: 3 } }).charms, {});
+  assert.deepEqual(normalizePlayer({ charms: { lucky: -5 } }).charms, {});
+  assert.deepEqual(normalizePlayer({ charms: { lucky: 999 } }).charms, { lucky: 99 });
+  assert.deepEqual(normalizePlayer({}).charms, {});
+});
+
+// ------------------------------------------------------------------ 表示
+
+test('所持金は狭い画面向けに桁を詰める', () => {
+  assert.equal(shortMoney(0, true), '0');
+  assert.equal(shortMoney(9999, true), '9,999');
+  assert.equal(shortMoney(10000, true), '1.0万');
+  assert.equal(shortMoney(12345, true), '1.2万');
+  assert.equal(shortMoney(999999, true), '99.9万', '切り上げて多く見せない');
+  assert.equal(shortMoney(99999999, true), '9,999万');
+  assert.equal(shortMoney(123456789, true), '1.23億');
+  // 広い画面ではそのまま
+  assert.equal(shortMoney(1234567, false), '1,234,567');
 });
