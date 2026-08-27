@@ -244,12 +244,14 @@ export class Scene {
       peak: Math.min(from.y, angler.y) - this.h * 0.34,
       t: 0,
     };
-    this.splash(from.x, from.y, 26, 2);
-    this.ring(from.x, from.y, 2.2);
-    this.shake = 10;
-    this.flash = 0.55;
-    this.flashColor = '255,255,255';
-    for (let i = 0; i < 18; i++) this.sparkle(from.x, from.y - 40);
+    const boss = Boolean(result.fish?.boss);
+    this.splash(from.x, from.y, boss ? 44 : 26, boss ? 2.6 : 2);
+    this.ring(from.x, from.y, boss ? 3 : 2.2);
+    this.shake = boss ? 20 : 10;
+    this.flash = boss ? 0.9 : 0.55;
+    this.flashColor = boss ? '255,225,140' : '255,255,255';
+    for (let i = 0; i < (boss ? 46 : 18); i++) this.sparkle(from.x, from.y - 40);
+    if (boss) this.pop(from.x, from.y - 70, '大物だ！', '#ffd43b');
   }
 
   /** 逃げられた / ラインが切れた。 */
@@ -1293,8 +1295,9 @@ export class Scene {
 
     // --- まん中：寄せバーの通り道
     track(gx - 6, gw + 12, 14);
-    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-    ctx.lineWidth = 1;
+    const boss = f.boss;
+    ctx.strokeStyle = boss ? 'rgba(255,212,59,0.85)' : 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = boss ? 2 : 1;
     ctx.stroke();
 
     const barTop = gy + f.barTop * gh;
@@ -1330,7 +1333,7 @@ export class Scene {
     // --- 左：寄せ具合。下から伸びて満タンで釣り上げ
     track(progressX - 3, thin + 6, 7);
     const ph = Math.max(2, f.progress * gh);
-    ctx.fillStyle = '#ffd43b';
+    ctx.fillStyle = boss && f.enraged ? '#ff8787' : '#ffd43b';
     ctx.beginPath();
     ctx.roundRect(progressX, gy + gh - ph, thin, ph, 4);
     ctx.fill();
@@ -1346,6 +1349,29 @@ export class Scene {
       ctx.beginPath();
       ctx.roundRect(strainX, gy + gh - sh, thin, sh, 4);
       ctx.fill();
+    }
+
+    // ボスは名乗りを出す
+    if (boss) {
+      ctx.save();
+      ctx.font = 'bold 13px "Hiragino Sans","Noto Sans JP",system-ui,sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      const text = `👑 ${f.fish.name}${f.enraged ? '（本気）' : ''}`;
+      const pad = 8;
+      const tw = ctx.measureText(text).width + pad * 2;
+      ctx.fillStyle = f.enraged
+        ? `rgba(190,40,40,${0.75 + Math.sin(this.t * 10) * 0.2})`
+        : 'rgba(120,90,10,0.8)';
+      ctx.beginPath();
+      ctx.roundRect(w - 18 - tw, 14, tw, 24, 12);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,212,59,0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#ffe9a8';
+      ctx.fillText(text, w - 18 - pad, 19);
+      ctx.restore();
     }
 
     if (label) {

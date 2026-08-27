@@ -120,6 +120,25 @@ if (!/0 pt[\s\S]*0 pt[\s\S]*0 pt[\s\S]*0 pt/.test(reset)) {
 }
 console.log('もう一度あそぶ: ポイントが 0 に戻った');
 
+// ---------------------------------------------------------------- 設定を戻す
+
+await page.click('#btn-settings');
+await page.waitForTimeout(300);
+await page.selectOption('#settings-form select[name="matchRounds"]', '10');
+await page.click('#settings-form button[type="submit"]');
+await page.waitForTimeout(700);
+if (!(await page.locator('#badge-round').innerText()).includes('/ 10')) throw new Error('設定が反映されていない');
+
+await page.click('#btn-settings');
+await page.waitForTimeout(300);
+await page.click('#settings-reset');
+await page.waitForTimeout(700);
+const backToDefault = await page.locator('#badge-round').innerText();
+if (!backToDefault.includes('/ 5')) throw new Error(`初期設定に戻っていない: ${backToDefault}`);
+const savedRounds = await page.evaluate(() => localStorage.getItem('daifugo:match'));
+if (savedRounds !== null) throw new Error(`保存が消えていない: ${savedRounds}`);
+console.log('初期設定に戻す: ラウンド数と保存が初期状態に戻った');
+
 // ---------------------------------------------------------------- スマホ
 
 await page.setViewportSize({ width: 420, height: 860 });

@@ -253,6 +253,37 @@ async function checkOffline() {
   await ctx.close();
 }
 
+/**
+ * 所持金の桁が増えても上部バーがはみ出さないこと。
+ * 実際に遊ぶと桁が増えていくのに、テストがいつも 0 円で走っていて見逃していた。
+ */
+async function checkWideMoney() {
+  const widths = [320, 360, 375, 390, 430];
+  const monies = [0, 12345, 1234567, 987654321];
+  for (const width of widths) {
+    for (const money of monies) {
+      const ctx = await browser.newContext({
+        viewport: { width, height: 800 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2,
+      });
+      const page = await ctx.newPage();
+      await page.goto(BASE, { waitUntil: 'networkidle' });
+      await page.waitForFunction(() => window.fishing);
+      await page.evaluate((m) => { window.fishing.player.money = m; window.fishing.render(); }, money);
+      await page.waitForTimeout(150);
+      const box = await page.evaluate(() => ({
+        over: document.documentElement.scrollWidth - window.innerWidth,
+        wallet: Math.round(document.getElementById('wallet').getBoundingClientRect().height),
+      }));
+      if (box.over > 1) fail(`${width}px / ${money.toLocaleString()}円 で ${box.over}px はみ出している`);
+      // 桁が増えると所持金が縦に折り返して読めなくなることがあった
+      if (box.wallet > 40) fail(`${width}px / ${money.toLocaleString()}円 で所持金が縦に潰れている (${box.wallet}px)`);
+      await ctx.close();
+    }
+  }
+  console.log(`はみ出し: ${widths.join('/')}px × 所持金 0〜9.8億 すべて OK`);
+}
+
+await checkWideMoney();
 await playOn('iphone', 'iPhone 13');
 await playOn('iphone-landscape', 'iPhone 13 landscape');
 await playOn('ipad', 'iPad (gen 7)');

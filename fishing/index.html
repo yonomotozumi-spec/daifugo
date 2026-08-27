@@ -64,6 +64,7 @@
       <div class="result-rarity" id="result-rarity">ふつう</div>
       <div class="result-emoji" id="result-emoji">🐟</div>
       <h2 class="result-name" id="result-name">フナ</h2>
+      <p class="result-boss" id="result-boss" hidden></p>
       <p class="result-size" id="result-size">20cm / 0.30kg</p>
       <p class="result-title" id="result-title" hidden>大物！</p>
       <p class="result-new" id="result-new" hidden>✨ 自己ベスト更新！</p>
@@ -103,6 +104,7 @@
     <h2>釣り日誌</h2>
     <ol class="log" id="log" aria-live="polite"></ol>
   </section>
+  <button type="button" class="ghost reset-btn" id="btn-reset" aria-haspopup="dialog">🗑️ はじめから</button>
   <a class="topbar-link only-narrow sheet-link" href="../">🃏 大富豪であそぶ</a>
 </aside>
 
@@ -116,6 +118,7 @@
     <button type="button" role="tab" class="tab active" data-kind="rod">釣り竿</button>
     <button type="button" role="tab" class="tab" data-kind="lure">ルアー・エサ</button>
     <button type="button" role="tab" class="tab" data-kind="gear">道具</button>
+    <button type="button" role="tab" class="tab" data-kind="charm">お札</button>
     <button type="button" role="tab" class="tab" data-kind="spot">釣り場</button>
   </div>
   <p class="gear-summary" id="gear-summary" hidden></p>
@@ -132,6 +135,18 @@
   </header>
   <div class="book" id="book"></div>
   <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<!-- はじめからやり直す -->
+<dialog id="dlg-reset">
+  <header class="dlg-head"><h2>🗑️ はじめからやり直す</h2></header>
+  <p class="reset-warn">この端末に保存されている釣りの記録を、すべて消します。</p>
+  <ul class="reset-list" id="reset-list"></ul>
+  <p class="reset-note">消したデータは元に戻せません。大富豪の成績には影響しません。</p>
+  <menu class="reset-actions">
+    <button type="button" class="ghost" id="reset-cancel">やめる</button>
+    <button type="button" class="danger" id="reset-ok">消してはじめる</button>
+  </menu>
 </dialog>
 
 <!-- iPhone / iPad 向けのインストール手順 -->

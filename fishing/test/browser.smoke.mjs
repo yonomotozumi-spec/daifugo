@@ -155,6 +155,46 @@ const keptRod = await page.locator('#badge-rod').innerText();
 if (keptRod !== rodName) throw new Error(`買った竿が消えている: ${keptRod}`);
 console.log('リロード後も所持金と持ち物が残っている');
 
+// ---------------------------------------------------------------- はじめから
+
+await page.click('#btn-reset');
+await page.waitForTimeout(300);
+if (!(await page.locator('#dlg-reset').evaluate((d) => d.open))) throw new Error('確認が出ない');
+const willLose = await page.locator('#reset-list').innerText();
+if (!willLose.includes('所持金')) throw new Error(`消えるものが出ていない: ${willLose}`);
+
+// やめるを押したら何も消えない
+await page.click('#reset-cancel');
+await page.waitForTimeout(300);
+if (await money() !== finalMoney) throw new Error('やめたのに消えた');
+
+await page.click('#btn-reset');
+await page.waitForTimeout(300);
+await page.click('#reset-ok');
+await page.waitForTimeout(600);
+
+const afterReset = await page.evaluate(() => ({
+  money: window.fishing.player.money,
+  rods: window.fishing.player.rods,
+  gears: window.fishing.player.gears,
+  spots: window.fishing.player.spots,
+  records: Object.keys(window.fishing.player.records).length,
+  saved: localStorage.getItem('fishing:save'),
+  mode: window.fishing.mode,
+}));
+if (afterReset.money !== 0) throw new Error(`所持金が残っている: ${afterReset.money}`);
+if (afterReset.rods.length !== 1 || afterReset.gears.length !== 0) throw new Error('道具が残っている');
+if (afterReset.spots.length !== 1) throw new Error('釣り場が残っている');
+if (afterReset.records !== 0) throw new Error('図鑑が残っている');
+if (afterReset.mode !== 'idle') throw new Error(`遊べる状態に戻っていない: ${afterReset.mode}`);
+if (JSON.parse(afterReset.saved).money !== 0) throw new Error('保存が上書きされていない');
+console.log('はじめから: 所持金・道具・釣り場・図鑑がすべて初期状態に戻った');
+
+// リロードしても初期状態のまま
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForFunction(() => window.fishing);
+if (await money() !== 0) throw new Error('リロードで元に戻ってしまった');
+
 if (errors.length) {
   console.error('コンソールエラー:', errors);
   throw new Error(`${errors.length} 件のエラー`);
