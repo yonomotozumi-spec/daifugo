@@ -55,14 +55,117 @@ export const TIMES = [
 
 export const timeAt = (index) => TIMES[((index % TIMES.length) + TIMES.length) % TIMES.length];
 
+// ---------------------------------------------------------------- 天気
+
+/**
+ * 天気。数キャストごとに変わる。
+ * rarityBonus / biteBonus はルアーや時間帯と同じ枠に足す。
+ * stress はラインへの負荷の増しぶん（荒れた日ほど切れやすい）。
+ * bigSize は大物寄りの補正。
+ */
+export const WEATHERS = [
+  {
+    id: 'sunny', label: '晴れ', emoji: '☀️', weight: 32,
+    rarityBonus: 0, biteBonus: 0, stress: 0, bigSize: 0,
+    note: 'おだやかな一日',
+  },
+  {
+    id: 'cloudy', label: 'くもり', emoji: '☁️', weight: 26,
+    rarityBonus: 0.06, biteBonus: 0.10, stress: 0, bigSize: 0,
+    note: '魚の警戒がゆるむ',
+  },
+  {
+    id: 'rain', label: '雨', emoji: '🌧️', weight: 20,
+    rarityBonus: 0.10, biteBonus: 0.25, stress: 0.1, bigSize: 0.05,
+    note: '雨は釣り人の味方。アタリが増える',
+  },
+  {
+    id: 'fog', label: '霧', emoji: '🌫️', weight: 13,
+    rarityBonus: 0.30, biteBonus: -0.08, stress: 0, bigSize: 0.05,
+    note: '何が出るか分からない。珍しい魚が寄る',
+  },
+  {
+    id: 'storm', label: '嵐', emoji: '⛈️', weight: 9,
+    rarityBonus: 0.40, biteBonus: 0.15, stress: 0.6, bigSize: 0.18,
+    note: '大物が動く。ただしラインが切れやすい',
+  },
+];
+
+export const weatherById = (id) => WEATHERS.find((w) => w.id === id) || WEATHERS[0];
+
+/** 天気が続くキャスト数の幅。 */
+export const WEATHER_SPAN = [3, 6];
+
+/**
+ * キャストのたびに呼ぶ。持ちが尽きたら次の天気を引く。
+ * @returns {{weather: object, changed: boolean}}
+ */
+export function advanceWeather(player, rng = Math.random) {
+  const left = (player.weatherLeft ?? 0) - 1;
+  // 持ちが残っていればそのまま。知らない天気が入っていたら引き直す
+  const known = weatherById(player.weather).id === player.weather;
+  if (left > 0 && known) {
+    player.weatherLeft = left;
+    return { weather: weatherById(player.weather), changed: false };
+  }
+  const next = weightedPick(WEATHERS, WEATHERS.map((w) => w.weight), rng);
+  const [min, max] = WEATHER_SPAN;
+  player.weather = next.id;
+  player.weatherLeft = min + Math.floor(rng() * (max - min + 1));
+  return { weather: next, changed: true };
+}
+
+// ---------------------------------------------------------------- できごと
+
+/**
+ * 釣りの最中にたまに起きること。
+ * fever … しばらくアタリが速くレアが出やすい
+ * nushi … 次の 1 投はレア以上が確定する
+ */
+export const EVENTS = {
+  fever: {
+    id: 'fever', label: '大漁タイム', emoji: '🌟', casts: 5, chance: 0.06,
+    rarityBonus: 0.25, biteSpeed: 0.35,
+    start: '魚の群れが入ってきた！ 大漁タイム！',
+    end: '群れが去っていった…',
+  },
+  nushi: {
+    id: 'nushi', label: 'ヌシの気配', emoji: '👑', casts: 1, chance: 0.03,
+    rarityBonus: 0, biteSpeed: 0, minRarity: 'rare',
+    start: '水面がざわめいている… ヌシの気配だ',
+    end: '気配が消えた',
+  },
+};
+
+/**
+ * できごとを引く。すでに何か起きているあいだは引かない。
+ * @returns {object|null}
+ */
+export function rollEvent(rng = Math.random, { active = null } = {}) {
+  if (active) return null;
+  for (const event of Object.values(EVENTS)) {
+    if (rng() < event.chance) return event;
+  }
+  return null;
+}
+
+/** できごとの残りキャストを減らす。0 になったら終わり。 */
+export function tickEvent(state) {
+  if (!state) return null;
+  const left = state.left - 1;
+  return left > 0 ? { ...state, left } : null;
+}
+
 // ---------------------------------------------------------------- 釣り場
 
 export const SPOTS = [
   { id: 'pond', name: '池', price: 0, note: 'はじまりの池。小物中心だが、たまに主が出る' },
   { id: 'river', name: '渓流', price: 500, note: '流れが速く、引きの強い魚が多い' },
   { id: 'harbor', name: '漁港', price: 2500, note: '堤防から狙う。夜のほうがよく釣れる' },
+  { id: 'ice', name: '氷上の湖', price: 4000, note: '氷に穴を開けて釣る。寒いが魚は上等' },
   { id: 'sea', name: '海', price: 6000, note: '大物の宝庫。強い竿がないと切られる' },
   { id: 'island', name: '南の島', price: 16000, note: '透きとおった海。見たことのない色の魚がいる' },
+  { id: 'cave', name: '地底湖', price: 22000, note: '鍾乳洞の奥。光の差さない水に何かがいる' },
   { id: 'deep', name: '深海', price: 32000, note: '光の届かない世界。何が出るか分からない' },
 ];
 
@@ -236,6 +339,18 @@ export const FISH = [
   { id: 'kanpachi', name: 'カンパチ', emoji: '🐟', spot: 'harbor', rarity: 'epic', weight: [3, 25], length: [50, 130], value: 11000, power: 4, speed: 0.66, escape: 0.52, color: '#b9a05e' },
   { id: 'kinkurodai', name: '黄金のクロダイ', emoji: '✨', spot: 'harbor', rarity: 'legendary', weight: [3, 12], length: [50, 80], value: 48000, power: 5, speed: 0.60, escape: 0.58, color: '#e8c15a' },
 
+  // ------------------------------------------------ 氷上の湖
+  { id: 'wakasagi', name: 'ワカサギ', emoji: '🐟', spot: 'ice', rarity: 'common', weight: [0.01, 0.12], length: [5, 16], value: 400, power: 1, speed: 0.42, escape: 0.26, color: '#cfd8e2' },
+  { id: 'chika', name: 'チカ', emoji: '🐟', spot: 'ice', rarity: 'common', weight: [0.02, 0.25], length: [8, 24], value: 520, power: 1, speed: 0.46, escape: 0.30, color: '#b7c4cf' },
+  { id: 'kajika', name: 'カジカ', emoji: '🐡', spot: 'ice', rarity: 'common', weight: [0.05, 0.6], length: [10, 28], value: 700, power: 2, speed: 0.28, escape: 0.36, color: '#8a7f6d' },
+  { id: 'sled', name: '落とし物のソリ', emoji: '🛷', spot: 'ice', rarity: 'common', weight: [2, 8], length: [60, 110], value: 40, power: 2, speed: 0.06, escape: 0.12, color: '#9a6f4a', junk: true },
+  { id: 'amemasu', name: 'アメマス', emoji: '🐟', spot: 'ice', rarity: 'uncommon', weight: [0.5, 5], length: [30, 75], value: 3200, power: 3, speed: 0.50, escape: 0.40, color: '#7d8b93' },
+  { id: 'himemasu', name: 'ヒメマス', emoji: '🐟', spot: 'ice', rarity: 'uncommon', weight: [0.3, 2.5], length: [25, 55], value: 3600, power: 2, speed: 0.54, escape: 0.38, color: '#c2645f' },
+  { id: 'kurione', name: 'クリオネ', emoji: '🧊', spot: 'ice', rarity: 'rare', weight: [0.005, 0.05], length: [1, 5], value: 9000, power: 1, speed: 0.70, escape: 0.34, color: '#ffb3c7' },
+  { id: 'ohyou', name: 'オヒョウ', emoji: '🐟', spot: 'ice', rarity: 'rare', weight: [10, 180], length: [80, 260], value: 11000, power: 5, speed: 0.34, escape: 0.48, color: '#6b6f6a' },
+  { id: 'kurokawa', name: 'イトウ（氷下）', emoji: '🐟', spot: 'ice', rarity: 'epic', weight: [5, 30], length: [70, 160], value: 24000, power: 4, speed: 0.52, escape: 0.52, color: '#5f7a63' },
+  { id: 'chouzame', name: 'シロチョウザメ', emoji: '🐊', spot: 'ice', rarity: 'legendary', weight: [40, 400], length: [150, 500], value: 95000, power: 5, speed: 0.46, escape: 0.58, color: '#9aa7a0' },
+
   // ------------------------------------------------ 海
   { id: 'aji', name: 'アジ', emoji: '🐟', spot: 'sea', rarity: 'common', weight: [0.1, 0.9], length: [15, 42], value: 520, power: 1, speed: 0.44, escape: 0.32, color: '#9aa7ae' },
   { id: 'saba', name: 'サバ', emoji: '🐟', spot: 'sea', rarity: 'common', weight: [0.3, 2.2], length: [25, 55], value: 680, power: 2, speed: 0.58, escape: 0.36, color: '#5f7d92' },
@@ -260,6 +375,17 @@ export const FISH = [
   { id: 'manta', name: 'オニイトマキエイ', emoji: '🐟', spot: 'island', rarity: 'epic', weight: [60, 600], length: [200, 520], value: 27000, power: 5, speed: 0.48, escape: 0.52, color: '#37506b' },
   { id: 'bashoukajiki', name: 'バショウカジキ', emoji: '🗡️', spot: 'island', rarity: 'epic', weight: [25, 90], length: [180, 330], value: 31000, power: 5, speed: 0.74, escape: 0.58, color: '#2f5f8f' },
   { id: 'jinbee', name: 'ジンベエザメ', emoji: '🦈', spot: 'island', rarity: 'legendary', weight: [300, 2000], length: [400, 1200], value: 160000, power: 5, speed: 0.44, escape: 0.60, color: '#4a6274' },
+
+  // ------------------------------------------------ 地底湖
+  { id: 'shirauo', name: 'チカイシラウオ', emoji: '🐟', spot: 'cave', rarity: 'common', weight: [0.01, 0.1], length: [4, 14], value: 2000, power: 1, speed: 0.50, escape: 0.32, color: '#e4e8ee' },
+  { id: 'doukutsuebi', name: 'ドウクツヌマエビ', emoji: '🦐', spot: 'cave', rarity: 'common', weight: [0.01, 0.15], length: [3, 12], value: 2400, power: 1, speed: 0.34, escape: 0.34, color: '#e0c9c0' },
+  { id: 'stalactite', name: '折れた鍾乳石', emoji: '🪨', spot: 'cave', rarity: 'common', weight: [1, 9], length: [20, 70], value: 60, power: 2, speed: 0.05, escape: 0.12, color: '#8d8477', junk: true },
+  { id: 'komori', name: 'コウモリ', emoji: '🦇', spot: 'cave', rarity: 'uncommon', weight: [0.02, 0.3], length: [8, 30], value: 3000, power: 1, speed: 0.78, escape: 0.44, color: '#4a4048' },
+  { id: 'blindfish', name: 'メナシウオ', emoji: '🐠', spot: 'cave', rarity: 'uncommon', weight: [0.05, 0.8], length: [8, 26], value: 9000, power: 2, speed: 0.46, escape: 0.40, color: '#f0e6e0' },
+  { id: 'sanshouuo', name: 'オオサンショウウオ', emoji: '🦎', spot: 'cave', rarity: 'rare', weight: [3, 30], length: [50, 150], value: 12000, power: 4, speed: 0.24, escape: 0.50, color: '#6a6255' },
+  { id: 'kaseki', name: '化石魚', emoji: '🦴', spot: 'cave', rarity: 'rare', weight: [0.5, 8], length: [20, 90], value: 20000, power: 3, speed: 0.30, escape: 0.46, color: '#c9bfa5' },
+  { id: 'suishou', name: '水晶のかたまり', emoji: '💎', spot: 'cave', rarity: 'epic', weight: [0.3, 5], length: [10, 40], value: 42000, power: 2, speed: 0.14, escape: 0.40, color: '#a9d8ea' },
+  { id: 'chiteiryu', name: '地底湖のヌシ', emoji: '🐲', spot: 'cave', rarity: 'legendary', weight: [30, 200], length: [180, 420], value: 140000, power: 5, speed: 0.56, escape: 0.62, color: '#3f4a5a' },
 
   // ------------------------------------------------ 深海
   { id: 'kinmedai', name: 'キンメダイ', emoji: '🐠', spot: 'deep', rarity: 'common', weight: [0.5, 4], length: [25, 60], value: 1800, power: 2, speed: 0.40, escape: 0.36, color: '#d4544a' },
@@ -286,12 +412,22 @@ export const fishOfSpot = (spotId) => FISH.filter((f) => f.spot === spotId);
  * 1 匹ぶんの抽選。レア度・ルアー・時間帯・竿の強さで重みを変える。
  * @returns {{fish: object, weightKg: number, lengthCm: number, sizeRatio: number, price: number}}
  */
-export function pickFish(spotId, { rng = Math.random, rod, lure, timeIndex = 1, gear = NO_GEAR } = {}) {
-  const candidates = fishOfSpot(spotId);
-  if (!candidates.length) throw new Error(`unknown spot: ${spotId}`);
+export function pickFish(spotId, {
+  rng = Math.random, rod, lure, timeIndex = 1, gear = NO_GEAR, weather = null, event = null,
+} = {}) {
+  const all = fishOfSpot(spotId);
+  if (!all.length) throw new Error(`unknown spot: ${spotId}`);
+
+  // ヌシの気配のときはレア以上しか掛からない
+  const floor = event?.minRarity ? RARITY_ORDER.indexOf(event.minRarity) : -1;
+  const rareOnly = floor >= 0
+    ? all.filter((f) => !f.junk && RARITY_ORDER.indexOf(f.rarity) >= floor)
+    : [];
+  const candidates = rareOnly.length ? rareOnly : all;
 
   const time = timeAt(timeIndex);
-  const bonus = (lure?.rarityBonus ?? 0) + time.rarityBonus + (gear.rarityBonus ?? 0);
+  const bonus = (lure?.rarityBonus ?? 0) + time.rarityBonus + (gear.rarityBonus ?? 0)
+    + (weather?.rarityBonus ?? 0) + (event?.rarityBonus ?? 0);
   const junkCut = clamp((lure?.junkCut ?? 0) + (gear.junkCut ?? 0), 0, 0.95);
   const power = rod?.power ?? 1;
 
@@ -307,8 +443,8 @@ export function pickFish(spotId, { rng = Math.random, rod, lure, timeIndex = 1, 
   });
 
   const fish = weightedPick(candidates, weights, rng);
-  // 大物ほど出にくいように偏らせる。ボーナスがあるとやや大物寄り
-  const sizeRatio = Math.pow(rng(), Math.max(0.7, 2.3 - bonus * 0.8));
+  // 大物ほど出にくいように偏らせる。ボーナスや荒天だとやや大物寄り
+  const sizeRatio = Math.pow(rng(), Math.max(0.6, 2.3 - bonus * 0.8 - (weather?.bigSize ?? 0) * 2));
   const weightKg = round2(lerp(fish.weight[0], fish.weight[1], sizeRatio));
   const lengthCm = Math.round(lerp(fish.length[0], fish.length[1], sizeRatio));
   const price = Math.max(1, Math.round(priceOf(fish, weightKg) * (1 + (gear.sell ?? 0))));
@@ -327,9 +463,13 @@ export function priceOf(fish, weightKg) {
 }
 
 /** アタリが来るまでの秒数。 */
-export function biteDelay(rng = Math.random, { lure, timeIndex = 1, gear = NO_GEAR } = {}) {
+export function biteDelay(rng = Math.random, {
+  lure, timeIndex = 1, gear = NO_GEAR, weather = null, event = null,
+} = {}) {
   const speed = clamp(
-    (lure?.biteSpeed ?? 0) + timeAt(timeIndex).biteBonus + (gear.biteSpeed ?? 0), 0, 0.8,
+    (lure?.biteSpeed ?? 0) + timeAt(timeIndex).biteBonus + (gear.biteSpeed ?? 0)
+    + (weather?.biteBonus ?? 0) + (event?.biteSpeed ?? 0),
+    -0.3, 0.85,
   );
   return round2((0.9 + rng() * 3.6) * (1 - speed) + 0.35);
 }
@@ -356,7 +496,7 @@ export const FIGHT = {
  * update(dt, holding) を毎フレーム呼ぶだけ。0..1 の値しか持たないので描画側は好きに使える。
  */
 export class Fight {
-  constructor({ fish, rod, sizeRatio = 0.5, rng = Math.random, gear = NO_GEAR }) {
+  constructor({ fish, rod, sizeRatio = 0.5, rng = Math.random, gear = NO_GEAR, weather = null }) {
     this.fish = fish;
     // 道具のぶんを足した竿として扱う（描画側は rod をそのまま見ればよい）
     this.rod = {
@@ -370,6 +510,8 @@ export class Fight {
     this.power = fish.power + sizeRatio * 0.9;
     this.speed = fish.speed * (0.85 + sizeRatio * 0.45);
     this.escapeRate = fish.escape * (0.85 + sizeRatio * 0.35) * (1 - clamp(gear.escapeCut ?? 0, 0, 0.6));
+    // 荒れた日ほどラインに負荷がかかる
+    this.stress = 1 + clamp(weather?.stress ?? 0, 0, 1);
 
     this.barH = this.rod.barH;
     this.barY = 0.5;
@@ -426,7 +568,7 @@ export class Fight {
     this.inBar = Math.abs(this.fishY - this.barY) <= half;
     if (this.inBar) {
       this.progress += this.rod.reel * step;
-      this.strain += Math.max(0, this.power - this.rod.power) * 0.5 / this.rod.line * step;
+      this.strain += Math.max(0, this.power - this.rod.power) * 0.5 * this.stress / this.rod.line * step;
     } else {
       this.progress -= this.escapeRate * 0.55 * step;
       this.strain -= 0.55 * step;
@@ -457,6 +599,8 @@ export function createPlayer(over = {}) {
     lure: 'worm',
     spot: 'pond',
     timeIndex: 0,
+    weather: 'sunny',
+    weatherLeft: 0,
     casts: 0,
     catches: 0,
     earned: 0,
@@ -558,6 +702,8 @@ export function normalizePlayer(raw) {
     spots: pickList(raw.spots, SPOTS, ['pond']),
     gears: Array.isArray(raw.gears) ? raw.gears.filter((id) => gearById(id)) : [],
     timeIndex: Number.isFinite(raw.timeIndex) ? Math.floor(raw.timeIndex) : 0,
+    weather: WEATHERS.some((w) => w.id === raw.weather) ? raw.weather : 'sunny',
+    weatherLeft: Number.isFinite(raw.weatherLeft) ? clamp(Math.floor(raw.weatherLeft), 0, 20) : 0,
     casts: Number.isFinite(raw.casts) ? raw.casts : 0,
     catches: Number.isFinite(raw.catches) ? raw.catches : 0,
     earned: Number.isFinite(raw.earned) ? raw.earned : 0,

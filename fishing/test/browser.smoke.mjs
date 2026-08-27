@@ -13,7 +13,7 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 // 値段や名前はゲーム側から読む（バランス調整のたびに直さなくて済むように）
-import { GEAR, RODS, SPOTS } from '../src/engine.js';
+import { GEAR, RODS, SPOTS, WEATHERS } from '../src/engine.js';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8123/fishing/';
 const OUT = new URL('./screenshots/', import.meta.url).pathname;
@@ -126,6 +126,14 @@ if (finalMoney !== afterGear - SPOTS[1].price) throw new Error(`釣り場の代�
 await page.keyboard.press('Escape');
 await page.waitForTimeout(400);
 await shot('08-river');
+
+// ---------------------------------------------------------------- 天気
+
+const weatherText = await page.locator('#badge-weather').innerText();
+if (!WEATHERS.some((w) => weatherText.includes(w.label))) {
+  throw new Error(`天気が表示されていない: ${weatherText}`);
+}
+console.log(`天気: ${weatherText}`);
 
 // ---------------------------------------------------------------- 図鑑
 

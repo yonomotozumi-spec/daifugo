@@ -7,6 +7,7 @@ import {
   equippedLure, equippedRod, fishById, fishOfSpot, gearById, gearEffects,
   hookWindow, mulberry32, normalizePlayer, owns, pickFish, priceOf, recordCatch,
   sell, sizeTitle, timeAt, weightedPick,
+  EVENTS, WEATHERS, WEATHER_SPAN, advanceWeather, rollEvent, tickEvent, weatherById,
 } from '../src/engine.js';
 
 const lure = (id) => LURES.find((l) => l.id === id);
@@ -393,13 +394,14 @@ test('池だけで遊んでいても、すぐ次の釣り場に行ける', () =>
   assert.ok(p.money >= river.price, `15回釣っても渓流に行けない（${p.money}円 / ${river.price}円）`);
 });
 
-test('釣り場は 6 か所あって、値段が段階的に上がる', () => {
-  assert.equal(SPOTS.length, 6);
-  assert.deepEqual(SPOTS.map((s) => s.id), ['pond', 'river', 'harbor', 'sea', 'island', 'deep']);
+test('釣り場は 8 か所あって、順番に値段が上がる', () => {
+  assert.equal(SPOTS.length, 8);
+  assert.deepEqual(SPOTS.map((s) => s.id),
+    ['pond', 'river', 'harbor', 'ice', 'sea', 'island', 'cave', 'deep']);
 });
 
-test('魚は全部で 55 種以上いて、どの釣り場にも 7 種以上いる', () => {
-  assert.ok(FISH.length >= 55, `魚が少ない（${FISH.length} 種）`);
+test('魚は全部で 75 種以上いて、どの釣り場にも 7 種以上いる', () => {
+  assert.ok(FISH.length >= 75, `魚が少ない（${FISH.length} 種）`);
   for (const spot of SPOTS) {
     const list = fishOfSpot(spot.id);
     assert.ok(list.length >= 7, `${spot.name}の魚が少ない（${list.length} 種）`);
@@ -580,4 +582,144 @@ test('道具もセーブデータに残り、知らないものは捨てる', ()
   assert.deepEqual(normalizePlayer({ gears: ['cooler', 'ghost'] }).gears, ['cooler']);
   assert.deepEqual(normalizePlayer({ gears: 'クーラー' }).gears, []);
   assert.deepEqual(normalizePlayer({}).gears, []);
+});
+
+// ------------------------------------------------------------------ 天気
+
+test('天気のデータが壊れていない', () => {
+  const ids = WEATHERS.map((w) => w.id);
+  assert.equal(new Set(ids).size, ids.length, 'ID が重複している');
+  assert.ok(WEATHERS.length >= 5, `天気が少ない（${WEATHERS.length} 種）`);
+  for (const w of WEATHERS) {
+    assert.ok(w.weight > 0, `${w.label}: 出現の重みがない`);
+    assert.ok(w.label && w.emoji && w.note, `${w.label}: 表示用の値が欠けている`);
+    assert.ok(w.stress >= 0 && w.stress <= 1, `${w.label}: ラインへの負荷が範囲外`);
+  }
+  assert.equal(weatherById('sunny').id, 'sunny');
+  assert.equal(weatherById('しらない天気').id, 'sunny', '知らない天気は晴れに倒す');
+});
+
+test('天気は数投ごとに変わり、しばらく続く', () => {
+  const rng = mulberry32(21);
+  const p = createPlayer();
+  const [min, max] = WEATHER_SPAN;
+
+  const first = advanceWeather(p, rng);
+  assert.equal(first.changed, true, '最初のキャストで天気が決まらない');
+  assert.ok(p.weatherLeft >= min && p.weatherLeft <= max, `持ちが範囲外: ${p.weatherLeft}`);
+
+  // 持ちが尽きるまでは変わらない（残り回数は先に控えておく）
+  const id = p.weather;
+  const remaining = p.weatherLeft - 1;
+  let changes = 0;
+  for (let i = 0; i < remaining; i++) {
+    if (advanceWeather(p, rng).changed) changes++;
+  }
+  assert.equal(changes, 0, '持ちが残っているのに天気が変わった');
+  assert.equal(p.weather, id);
+  assert.equal(advanceWeather(p, rng).changed, true, '持ちが尽きても変わらない');
+});
+
+test('長く続ければどの天気も出る', () => {
+  const rng = mulberry32(5);
+  const p = createPlayer();
+  const seen = new Set();
+  for (let i = 0; i < 600; i++) seen.add(advanceWeather(p, rng).weather.id);
+  for (const w of WEATHERS) assert.ok(seen.has(w.id), `${w.label}が一度も出ない`);
+});
+
+test('雨はアタリが早く、霧はレアが出やすい', () => {
+  const avgDelay = (weather) => {
+    const rng = mulberry32(31);
+    let sum = 0;
+    for (let i = 0; i < 400; i++) sum += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, weather });
+    return sum / 400;
+  };
+  assert.ok(avgDelay(weatherById('rain')) < avgDelay(weatherById('sunny')), '雨でアタリが早くなっていない');
+
+  const rareRate = (weather) => {
+    const rng = mulberry32(64);
+    let rare = 0;
+    for (let i = 0; i < 4000; i++) {
+      const { fish } = pickFish('sea', { rng, rod: rod('legend'), lure: lure('worm'), weather, timeIndex: 1 });
+      if (['rare', 'epic', 'legendary'].includes(fish.rarity)) rare++;
+    }
+    return rare;
+  };
+  assert.ok(rareRate(weatherById('fog')) > rareRate(weatherById('sunny')), '霧でレアが増えていない');
+});
+
+test('嵐はラインが切れやすい', () => {
+  const strainAfter = (weather) => {
+    const fight = new Fight({
+      fish: fishById('buri'), rod: rod('nobe'), sizeRatio: 0.8, rng: mulberry32(12), weather,
+    });
+    for (let i = 0; i < 30; i++) fight.update(1 / 60, true);
+    return fight.strain;
+  };
+  assert.ok(strainAfter(weatherById('storm')) > strainAfter(weatherById('sunny')), '嵐で負荷が増えていない');
+  assert.equal(new Fight({ fish: fishById('buri'), rod: rod('nobe') }).stress, 1, '天気なしなら負荷は等倍');
+});
+
+test('天気はセーブされ、壊れていれば晴れに戻す', () => {
+  const p = createPlayer();
+  advanceWeather(p, mulberry32(3));
+  const round = normalizePlayer(JSON.parse(JSON.stringify(p)));
+  assert.equal(round.weather, p.weather);
+  assert.equal(round.weatherLeft, p.weatherLeft);
+  assert.equal(normalizePlayer({ weather: '大雪' }).weather, 'sunny');
+  assert.equal(normalizePlayer({ weatherLeft: 999 }).weatherLeft, 20, '長すぎる持ちは丸める');
+});
+
+// ------------------------------------------------------------------ できごと
+
+test('できごとのデータが壊れていない', () => {
+  for (const event of Object.values(EVENTS)) {
+    assert.ok(event.chance > 0 && event.chance < 0.5, `${event.label}: 起きる確率が極端`);
+    assert.ok(event.casts >= 1, `${event.label}: 続くキャスト数がおかしい`);
+    assert.ok(event.label && event.emoji && event.start && event.end);
+  }
+});
+
+test('できごとはたまに起きるが、起きている最中は引かない', () => {
+  const rng = mulberry32(2);
+  let hits = 0;
+  for (let i = 0; i < 2000; i++) if (rollEvent(rng)) hits++;
+  assert.ok(hits > 0, '一度も起きない');
+  assert.ok(hits < 2000 * 0.3, `起きすぎ（${hits} / 2000）`);
+  assert.equal(rollEvent(() => 0, { active: { event: EVENTS.fever } }), null, '重ねて起きてしまう');
+});
+
+test('できごとはキャストのたびに減って、終わる', () => {
+  let state = { event: EVENTS.fever, left: 2 };
+  state = tickEvent(state);
+  assert.equal(state.left, 1);
+  assert.equal(tickEvent(state), null, '終わらない');
+  assert.equal(tickEvent(null), null);
+});
+
+test('大漁タイムはアタリが早くレアが出やすい', () => {
+  const rng = mulberry32(41);
+  let plain = 0;
+  let fever = 0;
+  for (let i = 0; i < 300; i++) {
+    plain += biteDelay(rng, { lure: lure('worm'), timeIndex: 1 });
+    fever += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, event: EVENTS.fever });
+  }
+  assert.ok(fever < plain, 'アタリが早くなっていない');
+  assert.ok(EVENTS.fever.rarityBonus > 0);
+});
+
+test('ヌシの気配ではレア以上しか掛からない', () => {
+  const rng = mulberry32(17);
+  for (const spot of SPOTS) {
+    for (let i = 0; i < 60; i++) {
+      const { fish } = pickFish(spot.id, {
+        rng, rod: rod('legend'), lure: lure('worm'), event: EVENTS.nushi,
+      });
+      assert.ok(['rare', 'epic', 'legendary'].includes(fish.rarity),
+        `${spot.name}で ${fish.name}（${fish.rarity}）が出た`);
+      assert.ok(!fish.junk, `${spot.name}でゴミが出た`);
+    }
+  }
 });

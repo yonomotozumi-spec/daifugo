@@ -121,6 +121,57 @@ button, a { touch-action: manipulation; }
 .badge[data-time="evening"] { background: rgba(255, 140, 90, 0.24); }
 .badge[data-time="night"] { background: rgba(110, 130, 220, 0.28); }
 
+.badge-weather .w-label { margin-left: 4px; }
+
+.badge[data-weather="sunny"] { background: rgba(255, 214, 120, 0.22); }
+.badge[data-weather="cloudy"] { background: rgba(190, 200, 210, 0.20); }
+.badge[data-weather="rain"] { background: rgba(110, 170, 230, 0.24); }
+.badge[data-weather="fog"] { background: rgba(225, 235, 240, 0.22); }
+.badge[data-weather="storm"] {
+  background: rgba(120, 110, 220, 0.3);
+  border-color: rgba(200, 190, 255, 0.5);
+  animation: storming 1.6s ease-in-out infinite;
+}
+
+@keyframes storming {
+  0%, 88%, 100% { box-shadow: 0 0 0 0 rgba(220, 220, 255, 0); }
+  92% { box-shadow: 0 0 12px 2px rgba(230, 235, 255, 0.75); }
+}
+
+/* できごとの帯（大漁タイムなど） */
+.event-banner {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #2a1e00;
+  background: linear-gradient(180deg, #ffe08a, #f7c948);
+  box-shadow: 0 6px 18px rgba(247, 201, 72, 0.45);
+  animation: eventIn 0.4s cubic-bezier(0.2, 1.6, 0.4, 1), eventGlow 1.4s ease-in-out infinite alternate;
+}
+
+.event-banner[data-event="nushi"] {
+  color: #fff;
+  background: linear-gradient(180deg, #9b6bff, #6b3fd6);
+  box-shadow: 0 6px 18px rgba(155, 107, 255, 0.5);
+}
+
+@keyframes eventIn {
+  from { transform: translateX(-50%) translateY(-10px) scale(0.9); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes eventGlow {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.15); }
+}
+
 .topbar-actions { display: flex; gap: 8px; align-items: center; }
 
 /* 大富豪へ戻るリンク。見た目はゴーストボタンに合わせる */
@@ -618,18 +669,21 @@ dialog form { margin-top: 12px; text-align: right; }
   .only-narrow { display: inline-flex; }
   .only-wide { display: none !important; }
 
-  /* ボタンは絵文字だけにして、指で押せる大きさを確保する */
+  /* ボタンは絵文字だけにする。横は詰めるが、指で押せる高さ（44px）は残す */
   .btn-label { display: none; }
-  .icon-btn { padding: 9px 12px; font-size: 17px; }
+  .icon-btn { padding: 11px 8px; font-size: 17px; }
 
-  .topbar { gap: 8px; padding-bottom: 8px; flex-wrap: nowrap; }
+  /* 上部バーは 1 行に収める。入りきらないので順に削っていく */
+  .topbar { gap: 6px; padding-bottom: 8px; flex-wrap: nowrap; }
   .topbar h1 { display: none; }
-  .wallet { padding: 4px 10px; }
-  .wallet-value { font-size: 18px; }
-  .badges { margin-left: 0; gap: 4px; flex-wrap: nowrap; }
-  .badge { font-size: 11px; padding: 3px 8px; }
+  .wallet { padding: 4px 9px; }
+  .wallet-value { font-size: 17px; }
+  /* さらに狭い端末では、バッジ側がはみ出さずに削れるようにしておく */
+  .badges { margin-left: 0; gap: 4px; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+  .badge { font-size: 11px; padding: 3px 7px; white-space: nowrap; }
   .badge-gear { display: none; }        /* 竿とルアーはショップで確認できる */
-  .topbar-actions { margin-left: auto; gap: 6px; }
+  .badge-weather .w-label { display: none; }   /* 天気は絵文字だけ */
+  .topbar-actions { margin-left: auto; gap: 4px; }
 
   .stage-wrap {
     padding: 8px calc(8px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(8px + var(--safe-left));
