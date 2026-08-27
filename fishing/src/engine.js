@@ -113,6 +113,85 @@ export const LURES = [
   },
 ];
 
+
+// ---------------------------------------------------------------- 道具
+
+/**
+ * 買い切りの道具。買った時点からずっと効く（付け替えはない）。
+ * 効果は足し算で重なる。
+ *
+ * sell        … 売値の上乗せ（0.12 なら +12%）
+ * escapeCut   … 魚の逃げ足を削る
+ * hookWindow  … 合わせられる猶予（秒）
+ * biteSpeed   … アタリまでの短縮（ルアーと同じ枠）
+ * rarityBonus … レアの出やすさ（ルアーと同じ枠）
+ * junkCut     … ゴミ回避（ルアーと同じ枠）
+ * line / reel / barH … 竿の性能への上乗せ
+ */
+export const GEAR = [
+  {
+    id: 'cooler', name: 'クーラーボックス', price: 1200, emoji: '🧊',
+    effects: { sell: 0.12 }, note: '鮮度が落ちない。魚が高く売れる',
+  },
+  {
+    id: 'chum', name: 'コマセバケツ', price: 1800, emoji: '🪣',
+    effects: { biteSpeed: 0.15 }, note: '撒き餌で魚を寄せる。アタリが早く来る',
+  },
+  {
+    id: 'net', name: 'タモ網', price: 2600, emoji: '🥅',
+    effects: { escapeCut: 0.15 }, note: '水際ですくえる。魚に逃げられにくい',
+  },
+  {
+    id: 'glasses', name: '偏光グラス', price: 4000, emoji: '🕶️',
+    effects: { hookWindow: 0.45 }, note: '水中が見える。合わせの猶予が伸びる',
+  },
+  {
+    id: 'light', name: 'ヘッドライト', price: 6000, emoji: '🔦',
+    effects: { rarityBonus: 0.08 }, note: '夜でも手元が見える。珍しい魚を逃さない',
+  },
+  {
+    id: 'spool', name: '太糸スプール', price: 9000, emoji: '🧵',
+    effects: { line: 0.6 }, note: '切れにくい糸。大物に耐えられる',
+  },
+  {
+    id: 'ereel', name: '電動リール', price: 15000, emoji: '⚙️',
+    effects: { reel: 0.08 }, note: 'ぐいぐい巻ける。寄せが速くなる',
+  },
+  {
+    id: 'bignet', name: '大型ランディングネット', price: 20000, emoji: '🪝',
+    effects: { barH: 0.03, escapeCut: 0.08 }, note: '大きな網。寄せバーが広がる',
+  },
+  {
+    id: 'sonar', name: '魚群探知機', price: 45000, emoji: '📡',
+    effects: { junkCut: 0.4, biteSpeed: 0.12 }, note: '魚のいる場所が分かる。ゴミを避けられる',
+  },
+  {
+    id: 'charm', name: '大漁祈願のお守り', price: 70000, emoji: '🎏',
+    effects: { rarityBonus: 0.15, sell: 0.1 }, note: '漁港の神社で授かった。ご利益は本物らしい',
+  },
+];
+
+export const gearById = (id) => GEAR.find((g) => g.id === id) || null;
+
+/** 効果なしの状態。 */
+export const NO_GEAR = {
+  sell: 0, escapeCut: 0, hookWindow: 0, biteSpeed: 0,
+  rarityBonus: 0, junkCut: 0, line: 0, reel: 0, barH: 0,
+};
+
+/** 持っている道具の効果を合計する。 */
+export function gearEffects(player) {
+  const total = { ...NO_GEAR };
+  for (const id of player?.gears ?? []) {
+    const gear = gearById(id);
+    if (!gear) continue;
+    for (const [key, value] of Object.entries(gear.effects)) {
+      total[key] = (total[key] ?? 0) + value;
+    }
+  }
+  return total;
+}
+
 // ---------------------------------------------------------------- 魚
 
 /**
@@ -207,13 +286,13 @@ export const fishOfSpot = (spotId) => FISH.filter((f) => f.spot === spotId);
  * 1 匹ぶんの抽選。レア度・ルアー・時間帯・竿の強さで重みを変える。
  * @returns {{fish: object, weightKg: number, lengthCm: number, sizeRatio: number, price: number}}
  */
-export function pickFish(spotId, { rng = Math.random, rod, lure, timeIndex = 1 } = {}) {
+export function pickFish(spotId, { rng = Math.random, rod, lure, timeIndex = 1, gear = NO_GEAR } = {}) {
   const candidates = fishOfSpot(spotId);
   if (!candidates.length) throw new Error(`unknown spot: ${spotId}`);
 
   const time = timeAt(timeIndex);
-  const bonus = (lure?.rarityBonus ?? 0) + time.rarityBonus;
-  const junkCut = lure?.junkCut ?? 0;
+  const bonus = (lure?.rarityBonus ?? 0) + time.rarityBonus + (gear.rarityBonus ?? 0);
+  const junkCut = clamp((lure?.junkCut ?? 0) + (gear.junkCut ?? 0), 0, 0.95);
   const power = rod?.power ?? 1;
 
   const weights = candidates.map((f) => {
@@ -232,7 +311,8 @@ export function pickFish(spotId, { rng = Math.random, rod, lure, timeIndex = 1 }
   const sizeRatio = Math.pow(rng(), Math.max(0.7, 2.3 - bonus * 0.8));
   const weightKg = round2(lerp(fish.weight[0], fish.weight[1], sizeRatio));
   const lengthCm = Math.round(lerp(fish.length[0], fish.length[1], sizeRatio));
-  return { fish, weightKg, lengthCm, sizeRatio, price: priceOf(fish, weightKg) };
+  const price = Math.max(1, Math.round(priceOf(fish, weightKg) * (1 + (gear.sell ?? 0))));
+  return { fish, weightKg, lengthCm, sizeRatio, price };
 }
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -247,13 +327,17 @@ export function priceOf(fish, weightKg) {
 }
 
 /** アタリが来るまでの秒数。 */
-export function biteDelay(rng = Math.random, { lure, timeIndex = 1 } = {}) {
-  const speed = clamp((lure?.biteSpeed ?? 0) + timeAt(timeIndex).biteBonus, 0, 0.8);
+export function biteDelay(rng = Math.random, { lure, timeIndex = 1, gear = NO_GEAR } = {}) {
+  const speed = clamp(
+    (lure?.biteSpeed ?? 0) + timeAt(timeIndex).biteBonus + (gear.biteSpeed ?? 0), 0, 0.8,
+  );
   return round2((0.9 + rng() * 3.6) * (1 - speed) + 0.35);
 }
 
-/** アタリに合わせられる猶予（秒）。 */
+/** アタリに合わせられる猶予（秒）。道具で伸ばせる。 */
 export const HOOK_WINDOW = 1.1;
+
+export const hookWindow = (gear = NO_GEAR) => HOOK_WINDOW + (gear.hookWindow ?? 0);
 
 // ---------------------------------------------------------------- ファイト
 
@@ -272,16 +356,22 @@ export const FIGHT = {
  * update(dt, holding) を毎フレーム呼ぶだけ。0..1 の値しか持たないので描画側は好きに使える。
  */
 export class Fight {
-  constructor({ fish, rod, sizeRatio = 0.5, rng = Math.random }) {
+  constructor({ fish, rod, sizeRatio = 0.5, rng = Math.random, gear = NO_GEAR }) {
     this.fish = fish;
-    this.rod = rod;
+    // 道具のぶんを足した竿として扱う（描画側は rod をそのまま見ればよい）
+    this.rod = {
+      ...rod,
+      reel: rod.reel + (gear.reel ?? 0),
+      line: rod.line + (gear.line ?? 0),
+      barH: Math.min(0.5, rod.barH + (gear.barH ?? 0)),
+    };
     this.rng = rng;
     // 大物ほど強い＆重い
     this.power = fish.power + sizeRatio * 0.9;
     this.speed = fish.speed * (0.85 + sizeRatio * 0.45);
-    this.escapeRate = fish.escape * (0.85 + sizeRatio * 0.35);
+    this.escapeRate = fish.escape * (0.85 + sizeRatio * 0.35) * (1 - clamp(gear.escapeCut ?? 0, 0, 0.6));
 
-    this.barH = rod.barH;
+    this.barH = this.rod.barH;
     this.barY = 0.5;
     this.barV = 0;
     this.fishY = 0.5;
@@ -362,6 +452,7 @@ export function createPlayer(over = {}) {
     rods: ['nobe'],
     lures: ['worm'],
     spots: ['pond'],
+    gears: [],
     rod: 'nobe',
     lure: 'worm',
     spot: 'pond',
@@ -380,6 +471,7 @@ export const equippedLure = (player) => lureById(player.lure) || LURES[0];
 export const SHOP_KINDS = {
   rod: { list: RODS, owned: 'rods', equip: 'rod' },
   lure: { list: LURES, owned: 'lures', equip: 'lure' },
+  gear: { list: GEAR, owned: 'gears' },   // 買ったらずっと効く。付け替えはない
   spot: { list: SPOTS, owned: 'spots', equip: 'spot' },
 };
 
@@ -402,14 +494,14 @@ export function buy(player, kind, id) {
   }
   player.money -= item.price;
   player[conf.owned].push(id);
-  player[conf.equip] = id;
+  if (conf.equip) player[conf.equip] = id;
   return { ok: true, item, money: player.money };
 }
 
 /** 装備の切り替え（持っているものだけ）。 */
 export function equip(player, kind, id) {
   const conf = SHOP_KINDS[kind];
-  if (!conf || !owns(player, kind, id)) return false;
+  if (!conf?.equip || !owns(player, kind, id)) return false;
   player[conf.equip] = id;
   return true;
 }
@@ -464,6 +556,7 @@ export function normalizePlayer(raw) {
     rods: pickList(raw.rods, RODS, ['nobe']),
     lures: pickList(raw.lures, LURES, ['worm']),
     spots: pickList(raw.spots, SPOTS, ['pond']),
+    gears: Array.isArray(raw.gears) ? raw.gears.filter((id) => gearById(id)) : [],
     timeIndex: Number.isFinite(raw.timeIndex) ? Math.floor(raw.timeIndex) : 0,
     casts: Number.isFinite(raw.casts) ? raw.casts : 0,
     catches: Number.isFinite(raw.catches) ? raw.catches : 0,

@@ -13,7 +13,7 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 // 値段や名前はゲーム側から読む（バランス調整のたびに直さなくて済むように）
-import { RODS, SPOTS } from '../src/engine.js';
+import { GEAR, RODS, SPOTS } from '../src/engine.js';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8123/fishing/';
 const OUT = new URL('./screenshots/', import.meta.url).pathname;
@@ -95,6 +95,23 @@ const badge = await page.locator('#badge-rod').innerText();
 if (badge !== rodName) throw new Error(`買った竿が装備されていない: ${badge}`);
 console.log(`購入: ${rodName} → 残り ${afterBuy}円`);
 
+// 道具は買い切り。買うと「使用中」になり、効果の合計が出る
+await page.click('.tab[data-kind="gear"]');
+await page.waitForTimeout(250);
+const gearCard = page.locator('.shop-item').first();
+const gearName = await gearCard.locator('h3').innerText();
+const beforeGear = await money();
+await gearCard.locator('button').click();
+await page.waitForTimeout(400);
+const afterGear = await money();
+if (afterGear !== beforeGear - GEAR[0].price) throw new Error(`道具の代金が引かれていない: ${afterGear}`);
+const gearBtn = await page.locator('.shop-item').first().locator('button').innerText();
+if (gearBtn !== '使用中') throw new Error(`買った道具が使われていない: ${gearBtn}`);
+const summary = await page.locator('#gear-summary').innerText();
+if (!summary.includes('売値')) throw new Error(`効果の合計が出ていない: ${summary}`);
+console.log(`購入: ${gearName.trim()} → ${summary}`);
+await shot('06b-shop-gear');
+
 // 釣り場も買って移動する
 await page.click('.tab[data-kind="spot"]');
 await page.waitForTimeout(200);
@@ -104,7 +121,7 @@ await shot('07-shop-spot');
 const spot = await page.locator('#badge-spot').innerText();
 if (spot !== SPOTS[1].name) throw new Error(`釣り場が変わっていない: ${spot}`);
 const finalMoney = await money();
-if (finalMoney !== afterBuy - SPOTS[1].price) throw new Error(`釣り場の代金が引かれていない: ${finalMoney}`);
+if (finalMoney !== afterGear - SPOTS[1].price) throw new Error(`釣り場の代金が引かれていない: ${finalMoney}`);
 
 await page.keyboard.press('Escape');
 await page.waitForTimeout(400);

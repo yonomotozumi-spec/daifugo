@@ -71,7 +71,7 @@ test/browser.smoke.mjs 実ブラウザでの通し確認（Playwright、任意�
 ## テスト
 
 ```
-npm test            # 大富豪 34 件 + 釣り 41 件。依存パッケージなし
+npm test            # 大富豪 34 件 + 釣り 53 件。依存パッケージなし
 ```
 
 CPU 同士で 5 シード × 5 ラウンドを自動対戦させ、非合法手が出ないこと・
@@ -133,7 +133,13 @@ Settings → Pages → Source を「Deploy from a branch」にして `main` / `r
 | --- | --- |
 | 釣り竿 | パワー・寄せ速度・バーの広さ・ライン強度が上がる。竿より強い魚を掛けるとラインが切れる |
 | ルアー・エサ | レアな魚の出やすさ、アタリの速さ、ゴミの釣れにくさが変わる。釣り場ごとの得意・不得意もある |
+| 道具 | 買い切りの補助アイテム 10 種。買った時点からずっと効き、効果は重ねがけできる |
 | 釣り場 | 池 → 渓流 → 漁港 → 海 → 南の島 → 深海 の 6 か所。奥ほど高い魚が出るが、強い魚も掛かる |
+
+道具は付け替えがなく、買うだけで効きます（クーラーボックスで売値 +12%、タモ網で逃げられにくい、
+偏光グラスで合わせの猶予が伸びる、電動リールで寄せが速くなる、魚群探知機でゴミを避ける、
+大漁祈願のお守りでレアが出やすくなる…など）。ショップの「道具」タブに、
+いま効いている合計が出ます。
 
 魚は全 60 種。レア度は ふつう / めずらしい / レア / 超レア / 伝説 の 5 段階で、
 同じ魚でも大きいほど高く売れます。キャストするたびに 朝 → 昼 → 夕 → 夜 と時間が進み、
@@ -169,7 +175,7 @@ fishing/src/style.css       スタイル
 fishing/manifest.webmanifest ホーム画面アプリとしての設定（PWA）
 fishing/sw.js               オフラインで遊ぶための Service Worker
 fishing/icons/              アプリのアイコン（元データは icon.svg）
-fishing/test/engine.test.js エンジンの単体テスト（41 件）
+fishing/test/engine.test.js エンジンの単体テスト（53 件）
 fishing/test/browser.smoke.mjs 実ブラウザでの通し確認（Playwright、任意）
 fishing/test/mobile.smoke.mjs  スマホ・タブレットでの通し確認（Playwright、任意）
 ```
@@ -181,7 +187,7 @@ fishing/test/mobile.smoke.mjs  スマホ・タブレットでの通し確認（P
 バランス調整や魚の追加はそこだけ触れば済みます。乱数も差し替え可能（`pickFish(spot, { rng })`）です。
 
 ```
-npm test                       # 大富豪 34 件 + 釣り 41 件（合計 75 件）
+npm test                       # 大富豪 34 件 + 釣り 53 件（合計 87 件）
 npm run test:browser:fishing   # 実ブラウザで 3 匹釣って売って買うところまで通す（要 Playwright）
 npm run test:mobile            # iPhone / iPad 相当の画面で、指だけで遊べるか・
                                # 機内モードでも起動するかまで通す（要 Playwright）

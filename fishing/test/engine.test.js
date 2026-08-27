@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  FIGHT, FISH, LURES, RARITY, RODS, SPOTS,
+  FIGHT, FISH, GEAR, LURES, NO_GEAR, RARITY, RODS, SPOTS,
   Fight, biteDelay, buy, collectionProgress, createPlayer, equip,
-  equippedLure, equippedRod, fishById, fishOfSpot, mulberry32, normalizePlayer,
-  owns, pickFish, priceOf, recordCatch, sell, sizeTitle, timeAt, weightedPick,
+  equippedLure, equippedRod, fishById, fishOfSpot, gearById, gearEffects,
+  hookWindow, mulberry32, normalizePlayer, owns, pickFish, priceOf, recordCatch,
+  sell, sizeTitle, timeAt, weightedPick,
 } from '../src/engine.js';
 
 const lure = (id) => LURES.find((l) => l.id === id);
@@ -436,4 +437,147 @@ test('のべ竿とミミズでも池なら稼げて、最初の竿に手が届�
     sell(p, result);
   }
   assert.ok(p.money >= RODS[1].price, `40回釣っても次の竿が買えない（${p.money}円）`);
+});
+
+// ------------------------------------------------------------------ 道具
+
+const withGear = (...ids) => gearEffects({ gears: ids });
+
+test('道具のデータが壊れていない', () => {
+  const ids = GEAR.map((g) => g.id);
+  assert.equal(new Set(ids).size, ids.length, 'ID が重複している');
+  assert.ok(GEAR.length >= 8, `道具が少ない（${GEAR.length} 個）`);
+  for (const g of GEAR) {
+    assert.ok(g.price > 0, `${g.name}: 値段がおかしい`);
+    assert.ok(g.name && g.note && g.emoji, `${g.name}: 表示用の値が欠けている`);
+    const effects = Object.entries(g.effects ?? {});
+    assert.ok(effects.length > 0, `${g.name}: 効果がない`);
+    for (const [key, value] of effects) {
+      assert.ok(key in NO_GEAR, `${g.name}: 知らない効果 ${key}`);
+      assert.ok(value > 0, `${g.name}: ${key} が正の値でない`);
+    }
+  }
+  for (let i = 1; i < GEAR.length; i++) {
+    assert.ok(GEAR[i].price > GEAR[i - 1].price, `${GEAR[i].name}の値段が前より安い`);
+  }
+});
+
+test('道具を持っていなければ効果はゼロ', () => {
+  assert.deepEqual(gearEffects(createPlayer()), NO_GEAR);
+  assert.deepEqual(gearEffects(null), NO_GEAR);
+  assert.deepEqual(withGear('knowniot'), NO_GEAR, '知らない道具は無視する');
+});
+
+test('道具の効果は足し算で重なる', () => {
+  const one = withGear('cooler');
+  const both = withGear('cooler', 'charm');
+  assert.equal(one.sell, gearById('cooler').effects.sell);
+  assert.equal(both.sell, gearById('cooler').effects.sell + gearById('charm').effects.sell);
+  assert.equal(both.rarityBonus, gearById('charm').effects.rarityBonus);
+});
+
+test('クーラーボックスがあると高く売れる', () => {
+  const draw = (gear) => {
+    const rng = mulberry32(1234);
+    return pickFish('pond', { rng, rod: rod('nobe'), lure: lure('worm'), gear });
+  };
+  const plain = draw(NO_GEAR);
+  const cooled = draw(withGear('cooler'));
+  assert.equal(plain.fish.id, cooled.fish.id, '前提：同じ魚が釣れること');
+  assert.ok(cooled.price > plain.price, `高くなっていない ${plain.price} → ${cooled.price}`);
+  assert.equal(cooled.price, Math.round(plain.price * 1.12));
+});
+
+test('お守りでレアが出やすくなる', () => {
+  const rate = (gear) => {
+    const rng = mulberry32(77);
+    let rare = 0;
+    for (let i = 0; i < 4000; i++) {
+      const { fish } = pickFish('sea', { rng, rod: rod('legend'), lure: lure('worm'), gear, timeIndex: 1 });
+      if (['rare', 'epic', 'legendary'].includes(fish.rarity)) rare++;
+    }
+    return rare;
+  };
+  assert.ok(rate(withGear('charm')) > rate(NO_GEAR), 'レア率が上がっていない');
+});
+
+test('魚群探知機でゴミが減る', () => {
+  const junk = (gear) => {
+    const rng = mulberry32(55);
+    let count = 0;
+    for (let i = 0; i < 3000; i++) {
+      const { fish } = pickFish('harbor', { rng, rod: rod('carbon'), lure: lure('worm'), gear });
+      if (fish.junk) count++;
+    }
+    return count;
+  };
+  assert.ok(junk(withGear('sonar')) < junk(NO_GEAR), 'ゴミ率が下がっていない');
+});
+
+test('コマセバケツでアタリが早くなる', () => {
+  const avg = (gear) => {
+    const rng = mulberry32(9);
+    let sum = 0;
+    for (let i = 0; i < 400; i++) sum += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, gear });
+    return sum / 400;
+  };
+  assert.ok(avg(withGear('chum')) < avg(NO_GEAR), 'アタリが早くなっていない');
+});
+
+test('偏光グラスで合わせの猶予が伸びる', () => {
+  assert.ok(hookWindow(withGear('glasses')) > hookWindow(NO_GEAR));
+  assert.equal(hookWindow(withGear('glasses')), hookWindow(NO_GEAR) + 0.45);
+  assert.equal(hookWindow(), hookWindow(NO_GEAR), '既定は効果なしと同じ');
+});
+
+test('道具は竿の性能に上乗せされる', () => {
+  const base = new Fight({ fish: fishById('buri'), rod: rod('nobe'), sizeRatio: 0.5 });
+  const geared = new Fight({
+    fish: fishById('buri'), rod: rod('nobe'), sizeRatio: 0.5,
+    gear: withGear('ereel', 'spool', 'bignet', 'net'),
+  });
+  assert.ok(geared.rod.reel > base.rod.reel, '寄せ速度が上がっていない');
+  assert.ok(geared.rod.line > base.rod.line, 'ライン強度が上がっていない');
+  assert.ok(geared.barH > base.barH, 'バーが広がっていない');
+  assert.ok(geared.escapeRate < base.escapeRate, '逃げ足が落ちていない');
+  // 元の竿のデータは書き換えない
+  assert.equal(rod('nobe').reel, 0.42);
+});
+
+test('タモ網があると逃げられにくい', () => {
+  const run = (gear) => {
+    const fight = new Fight({
+      fish: fishById('bass'), rod: rod('nobe'), sizeRatio: 0.5, rng: mulberry32(8), gear,
+    });
+    return simulate(fight, () => false, 30);
+  };
+  const plain = new Fight({
+    fish: fishById('bass'), rod: rod('nobe'), sizeRatio: 0.5, rng: mulberry32(8),
+  });
+  const netted = new Fight({
+    fish: fishById('bass'), rod: rod('nobe'), sizeRatio: 0.5, rng: mulberry32(8), gear: withGear('net'),
+  });
+  assert.ok(netted.escapeRate < plain.escapeRate);
+  assert.equal(run(NO_GEAR), FIGHT.escaped, '前提：何もしなければ逃げられる');
+});
+
+test('道具は買えるが、付け替えはない', () => {
+  const p = createPlayer({ money: 5000 });
+  assert.equal(buy(p, 'gear', 'cooler').ok, true);
+  assert.equal(p.money, 5000 - gearById('cooler').price);
+  assert.ok(owns(p, 'gear', 'cooler'));
+  assert.equal(buy(p, 'gear', 'cooler').ok, false, '二重購入できてしまう');
+  assert.equal(equip(p, 'gear', 'cooler'), false, '道具に装備の概念はない');
+  assert.equal(buy(p, 'gear', 'charm').ok, false, '所持金以上に買えてしまう');
+});
+
+test('道具もセーブデータに残り、知らないものは捨てる', () => {
+  const p = createPlayer({ money: 99999 });
+  buy(p, 'gear', 'cooler');
+  buy(p, 'gear', 'net');
+  const round = normalizePlayer(JSON.parse(JSON.stringify(p)));
+  assert.deepEqual(round.gears, ['cooler', 'net']);
+  assert.deepEqual(normalizePlayer({ gears: ['cooler', 'ghost'] }).gears, ['cooler']);
+  assert.deepEqual(normalizePlayer({ gears: 'クーラー' }).gears, []);
+  assert.deepEqual(normalizePlayer({}).gears, []);
 });
