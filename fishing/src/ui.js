@@ -1,10 +1,11 @@
 /** 画面まわりとゲーム進行。抽選と判定は engine.js、描画は scene.js に任せる。 */
 
 import {
-  FIGHT, FISH, HOOK_WINDOW, RARITY, SHOP_KINDS, SPOTS,
-  Fight, biteDelay, buy, collectionProgress, createPlayer, equip,
-  equippedLure, equippedRod, fishOfSpot, normalizePlayer, owns, pickFish,
-  recordCatch, sell, sizeLabel, sizeTitle, spotById, timeAt, yen,
+  CHARMS, FIGHT, FISH, RARITY, SHOP_KINDS, SPOTS,
+  Fight, advanceWeather, biteDelay, buy, buyCharm, charmCount, collectionProgress,
+  createPlayer, equip, equippedLure, equippedRod, fishOfSpot, gearEffects, hookWindow,
+  normalizePlayer, owns, pickFish, recordCatch, rollEvent, sell, sizeLabel,
+  shortMoney, sizeTitle, spotById, tickEvent, timeAt, useCharm, weatherById, yen,
 } from './engine.js';
 import { CAST_TIME, LAND_TIME, Scene } from './scene.js';
 
@@ -33,6 +34,8 @@ let lastFrame = 0;
 let shopKind = 'rod';
 let displayMoney = player.money;
 let announcedSpot = null;   // 「行けるようになった」と知らせ済みの釣り場
+let happening = null;       // いま起きているできごと { event, left }
+let charmState = null;      // 使っているお札 { charm, left }
 
 // ---------------------------------------------------------------- セーブ
 
@@ -72,12 +75,17 @@ function log(text, tone = '') {
   while (list.children.length > 40) list.lastElementChild.remove();
 }
 
+/** 狭い画面では所持金の桁を詰める（上部バーがはみ出さないように）。 */
+const narrowScreen = () => window.matchMedia?.('(max-width: 900px)').matches ?? false;
+
 /** 所持金はパチパチ数字が上がる。 */
 function renderMoney(animate = true) {
   const el = $('money');
+  const narrow = narrowScreen();
+  $('wallet').title = `${player.money.toLocaleString('ja-JP')}円`;
   if (!animate) {
     displayMoney = player.money;
-    el.textContent = displayMoney.toLocaleString('ja-JP');
+    el.textContent = shortMoney(displayMoney, narrow);
     return;
   }
   const from = displayMoney;
@@ -88,7 +96,7 @@ function renderMoney(animate = true) {
   const tick = (now) => {
     const t = Math.min(1, (now - start) / dur);
     displayMoney = Math.round(from + (to - from) * (1 - (1 - t) * (1 - t)));
-    el.textContent = displayMoney.toLocaleString('ja-JP');
+    el.textContent = shortMoney(displayMoney, narrow);
     if (t < 1) requestAnimationFrame(tick);
   };
   $('wallet').classList.remove('bump');
@@ -104,6 +112,12 @@ function renderHud() {
   $('badge-spot').textContent = spot.name;
   $('badge-time').textContent = time.label;
   $('badge-time').dataset.time = time.id;
+  const weather = weatherById(player.weather);
+  const badge = $('badge-weather');
+  badge.querySelector('.w-emoji').textContent = weather.emoji;
+  badge.querySelector('.w-label').textContent = weather.label;
+  badge.dataset.weather = weather.id;
+  badge.title = `${weather.label}：${weather.note}`;
   $('badge-rod').textContent = equippedRod(player).name;
   $('badge-lure').textContent = equippedLure(player).name;
   $('stat-casts').textContent = player.casts;
@@ -113,6 +127,23 @@ function renderHud() {
   $('stat-book').textContent = `${prog.found} / ${prog.total}`;
   scene.setSpot(player.spot);
   scene.setTime(time.id);
+  scene.setWeather(player.weather);
+  renderEvent();
+}
+
+/** いま効いているできごと・お札の帯。 */
+function renderEvent() {
+  const banner = $('event-banner');
+  const active = [happening, charmState].filter(Boolean);
+  banner.hidden = active.length === 0;
+  if (!active.length) return;
+  banner.textContent = active
+    .map(({ event, charm, left }) => {
+      const item = event ?? charm;
+      return `${item.emoji} ${item.label ?? item.name}（あと ${left} 投）`;
+    })
+    .join('　');
+  banner.dataset.event = happening?.event.id ?? 'charm';
 }
 
 /**
@@ -147,6 +178,22 @@ function cast() {
   hideResult();
   player.casts += 1;
   player.timeIndex += 1;
+
+  // 天気は数投ごとに変わる
+  const { weather, changed } = advanceWeather(player, Math.random);
+  if (changed) log(`天気が${weather.label}になった。${weather.note}`, weather.id === 'storm' ? 'bad' : '');
+
+  // できごとは、何も起きていないときだけ引く
+  if (!happening) {
+    const event = rollEvent(Math.random, { active: happening });
+    if (event) {
+      happening = { event, left: event.casts };
+      log(event.start, 'epic');
+      setStatus(`${event.emoji} ${event.start}`, 'alert');
+      buzz([20, 40, 20]);
+    }
+  }
+
   renderHud();
   save();
 
@@ -161,7 +208,14 @@ function cast() {
     setAction('合わせる', { disabled: false });
     setStatus('アタリを待とう…');
     setHint('ウキが沈んだ瞬間に合わせる');
-    const delay = biteDelay(Math.random, { lure: equippedLure(player), timeIndex: player.timeIndex });
+    const delay = biteDelay(Math.random, {
+      lure: equippedLure(player),
+      timeIndex: player.timeIndex,
+      gear: gearEffects(player),
+      weather: weatherById(player.weather),
+      event: happening?.event,
+      charm: charmState?.charm.effect,
+    });
     timer = setTimeout(startBite, delay * 1000);
   }, CAST_TIME * 1000);
 }
@@ -172,13 +226,17 @@ function startBite() {
     rod: equippedRod(player),
     lure: equippedLure(player),
     timeIndex: player.timeIndex,
+    gear: gearEffects(player),
+    weather: weatherById(player.weather),
+    event: happening?.event,
+    charm: charmState?.charm.effect,
   });
   setMode(MODE.bite);
   scene.bite();
   buzz(35);
   setAction('合わせる！', { hot: true });
   setStatus('きた！ 合わせろ！', 'alert');
-  timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), HOOK_WINDOW * 1000);
+  timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), hookWindow(gearEffects(player)) * 1000);
 }
 
 function missBite(text) {
@@ -197,11 +255,25 @@ function hook() {
   const rod = equippedRod(player);
   fight = new Fight({
     fish: pending.fish, rod, sizeRatio: pending.sizeRatio, rng: Math.random,
+    gear: gearEffects(player),
+    weather: weatherById(player.weather),
+    charm: charmState?.charm.effect,
   });
   setMode(MODE.fight);
   scene.hook(fight);
-  buzz(20);
   setAction('巻く（長押し）', { hot: true });
+
+  if (pending.fish.boss) {
+    // ヌシは別格。名乗りを上げてから始める
+    buzz([40, 60, 40, 60, 90]);
+    scene.shake = 14;
+    setStatus(`👑 ${pending.fish.name} — ${pending.fish.title}！`, 'alert');
+    setHint('半分まで寄せると暴れ出す。焦らずバーに入れ続ける');
+    log(`👑 ${pending.fish.name}（${pending.fish.title}）が掛かった！`, 'legendary');
+    return;
+  }
+
+  buzz(20);
   const heavy = pending.fish.power > rod.power;
   setStatus(heavy ? '重い！ かなりの大物だ' : '掛かった！ 巻き上げろ！', heavy ? 'alert' : '');
   setHint(heavy ? '竿が負けている。巻きっぱなしはライン切れ' : '魚を緑のバーに入れ続ける');
@@ -239,6 +311,17 @@ function finishFight(phase) {
 
 function backToIdle() {
   clearTimeout(timer);
+  // 1 投ぶん進める。終わったら知らせる
+  if (happening) {
+    const next = tickEvent(happening);
+    if (!next) log(happening.event.end);
+    happening = next;
+  }
+  if (charmState) {
+    const next = tickEvent(charmState);
+    if (!next) log(`${charmState.charm.name}の効き目が切れた`);
+    charmState = next;
+  }
   scene.reset();
   setMode(MODE.idle);
   setAction('キャスト');
@@ -268,6 +351,10 @@ function showResult(result) {
   }
   $('result-new').hidden = !result.isNew;
 
+  const bossLine = $('result-boss');
+  bossLine.hidden = !result.fish.boss;
+  if (result.fish.boss) bossLine.textContent = `👑 ${result.fish.title} — ${result.fish.tale}`;
+  card.dataset.boss = result.fish.boss ? 'true' : 'false';
   card.dataset.rarity = result.fish.rarity;
   card.hidden = false;
   card.classList.remove('in');
@@ -358,7 +445,7 @@ function openShop(kind = shopKind) {
 }
 
 function shopItems(kind) {
-  return SHOP_KINDS[kind].list;
+  return kind === 'charm' ? CHARMS : SHOP_KINDS[kind].list;
 }
 
 function itemStats(kind, item) {
@@ -380,6 +467,15 @@ function itemStats(kind, item) {
       ['得意な場所', spots || '—'],
     ];
   }
+  if (kind === 'gear') return effectRows(item.effects);
+  if (kind === 'charm') {
+    return [
+      ...effectRows(item.effect),
+      ['効く長さ', `${item.casts} 投`],
+      ['持っている数', `${charmCount(player, item.id)} 枚`],
+    ];
+  }
+
   const all = fishOfSpot(item.id);
   const found = all.filter((f) => player.records[f.id]).length;
   return [
@@ -389,16 +485,56 @@ function itemStats(kind, item) {
   ];
 }
 
+/** 道具の効果を「○○ +12%」の形に直す。 */
+const EFFECT_LABELS = {
+  sell: ['売値', (v) => `+${Math.round(v * 100)}%`],
+  noSnap: ['ライン切れ', () => 'しない'],
+  minRarity: ['釣れる魚', (v) => `${RARITY[v]?.label ?? v}以上`],
+  bossBoost: ['ヌシの出やすさ', (v) => `×${v}`],
+  escapeCut: ['逃げにくさ', (v) => `+${Math.round(v * 100)}%`],
+  hookWindow: ['合わせの猶予', (v) => `+${v.toFixed(2)}秒`],
+  biteSpeed: ['アタリの速さ', (v) => `+${Math.round(v * 100)}%`],
+  rarityBonus: ['レア度アップ', (v) => `+${Math.round(v * 100)}%`],
+  junkCut: ['ゴミ回避', (v) => `+${Math.round(v * 100)}%`],
+  line: ['ライン強度', (v) => `+${v.toFixed(1)}`],
+  reel: ['寄せ速度', (v) => `+${Math.round(v * 100)}`],
+  barH: ['バーの広さ', (v) => `+${Math.round(v * 100)}`],
+};
+
+function effectRows(effects) {
+  return Object.entries(effects)
+    .filter(([, v]) => v)
+    .map(([key, v]) => {
+      const [label, format] = EFFECT_LABELS[key] ?? [key, (x) => String(x)];
+      return [label, format(v)];
+    });
+}
+
 function renderShop() {
   $('shop-money').textContent = yen(player.money);
+
+  // 道具のタブでは、いま効いている合計を上に出す
+  const totals = effectRows(gearEffects(player));
+  const summary = $('gear-summary');
+  summary.hidden = shopKind !== 'gear';
+  if (shopKind === 'gear') {
+    summary.textContent = totals.length
+      ? `いまの効果： ${totals.map(([k, v]) => `${k} ${v}`).join('　')}`
+      : 'まだ道具を持っていません。買うとずっと効きます';
+  }
   for (const tab of document.querySelectorAll('.tab')) {
     tab.classList.toggle('active', tab.dataset.kind === shopKind);
   }
   const list = $('shop-list');
   list.innerHTML = '';
-  const equipKey = SHOP_KINDS[shopKind].equip;
+  // お札には装備の概念がないので、SHOP_KINDS に無いことがある
+  const equipKey = SHOP_KINDS[shopKind]?.equip;
 
   for (const item of shopItems(shopKind)) {
+    if (shopKind === 'charm') {
+      list.append(charmCard(item));
+      continue;
+    }
     const has = owns(player, shopKind, item.id);
     const equipped = player[equipKey] === item.id;
     const card = document.createElement('article');
@@ -406,7 +542,7 @@ function renderShop() {
 
     const head = document.createElement('div');
     head.className = 'shop-item-head';
-    head.innerHTML = `<h3>${item.name}</h3>`;
+    head.innerHTML = `<h3>${item.emoji ? `${item.emoji} ` : ''}${item.name}</h3>`;
     const price = document.createElement('span');
     price.className = 'shop-price';
     price.textContent = has ? '購入済み' : yen(item.price);
@@ -429,10 +565,14 @@ function renderShop() {
     btn.type = 'button';
     btn.className = has ? 'ghost' : 'primary';
     const equipLabel = shopKind === 'spot' ? '移動する' : '装備する';
-    btn.textContent = equipped ? (shopKind === 'spot' ? '釣り中' : '装備中') : has ? equipLabel : '買う';
-    btn.disabled = equipped || (!has && player.money < item.price);
+    // 道具は付け替えがないので、持っていれば「使用中」で固定
+    btn.textContent = shopKind === 'gear'
+      ? (has ? '使用中' : '買う')
+      : equipped ? (shopKind === 'spot' ? '釣り中' : '装備中') : has ? equipLabel : '買う';
+    btn.disabled = (shopKind === 'gear' && has) || equipped || (!has && player.money < item.price);
     btn.addEventListener('click', () => {
       if (has) {
+        if (shopKind === 'gear') return;
         equip(player, shopKind, item.id);
         shopMsg(`${item.name}に${shopKind === 'spot' ? '移動した' : 'かえた'}`);
         log(shopKind === 'spot' ? `${item.name}へ移動した` : `${item.name}を装備した`);
@@ -455,6 +595,73 @@ function renderShop() {
     card.append(head, note, stats, btn);
     list.append(card);
   }
+}
+
+/** お札のカード。買う（何枚でも）と、使う。 */
+function charmCard(item) {
+  const held = charmCount(player, item.id);
+  const card = document.createElement('article');
+  card.className = `shop-item charm-item${held ? ' owned' : ''}`;
+
+  const head = document.createElement('div');
+  head.className = 'shop-item-head';
+  head.innerHTML = `<h3>${item.emoji} ${item.name}</h3>`;
+  const price = document.createElement('span');
+  price.className = 'shop-price';
+  price.textContent = yen(item.price);
+  if (player.money < item.price) price.classList.add('short');
+  head.append(price);
+
+  const note = document.createElement('p');
+  note.className = 'shop-note';
+  note.textContent = item.note;
+
+  const stats = document.createElement('dl');
+  stats.className = 'shop-stats';
+  for (const [label, value] of itemStats('charm', item)) {
+    const div = document.createElement('div');
+    div.innerHTML = `<dt>${label}</dt><dd>${value}</dd>`;
+    stats.append(div);
+  }
+
+  const row = document.createElement('div');
+  row.className = 'charm-actions';
+
+  const buyBtn = document.createElement('button');
+  buyBtn.type = 'button';
+  buyBtn.className = 'primary';
+  buyBtn.textContent = '買う';
+  buyBtn.disabled = player.money < item.price;
+  buyBtn.addEventListener('click', () => {
+    const res = buyCharm(player, item.id, 1);
+    if (!res.ok) return shopMsg(res.error, true);
+    shopMsg(`${item.name}を買った（${charmCount(player, item.id)}枚）`);
+    log(`${item.name}を ${yen(item.price)} で買った`, 'money');
+    save();
+    renderMoney();
+    renderShop();
+  });
+
+  const useBtn = document.createElement('button');
+  useBtn.type = 'button';
+  useBtn.className = 'ghost';
+  useBtn.textContent = held ? `使う（${held}）` : '持っていない';
+  useBtn.disabled = !held || charmState !== null || mode !== MODE.idle;
+  useBtn.addEventListener('click', () => {
+    const charm = useCharm(player, item.id);
+    if (!charm) return shopMsg('持っていません', true);
+    charmState = { charm, left: charm.casts };
+    save();
+    renderEvent();
+    renderShop();
+    log(`${charm.name}を使った。${charm.note}`, 'epic');
+    setStatus(`${charm.emoji} ${charm.name}を使った`, 'good');
+    $('dlg-shop').close();
+  });
+
+  row.append(buyBtn, useBtn);
+  card.append(head, note, stats, row);
+  return card;
 }
 
 function shopMsg(text, bad = false) {
@@ -485,12 +692,16 @@ function openBook() {
       const cell = document.createElement('div');
       cell.className = `book-cell${rec ? '' : ' unknown'}`;
       cell.style.setProperty('--rarity', RARITY[f.rarity].color);
+      if (f.boss) cell.classList.add('boss');
       cell.innerHTML = rec
         ? `<span class="book-emoji">${f.emoji}</span>
-           <strong>${f.name}</strong>
+           <strong>${f.boss ? '👑 ' : ''}${f.name}</strong>
+           ${f.boss ? `<small class="book-title">${f.title}</small>` : ''}
            <small>最大 ${rec.lengthCm}cm / ${rec.weightKg}kg</small>
            <small>${rec.count}匹 ・ 最高 ${yen(rec.price)}</small>`
-        : `<span class="book-emoji">❔</span><strong>？？？</strong><small>${RARITY[f.rarity].label}</small>`;
+        : `<span class="book-emoji">${f.boss ? '👑' : '❔'}</span>
+           <strong>${f.boss ? 'ヌシ' : '？？？'}</strong>
+           <small>${RARITY[f.rarity].label}</small>`;
       grid.append(cell);
     }
     section.append(grid);
@@ -509,8 +720,67 @@ function frame(now) {
 
   if (mode === MODE.fight && fight) {
     const phase = fight.update(dt, holding);
+    if (fight.justEnraged) {
+      setStatus('ヌシが暴れ出した！', 'bad');
+      setHint('速くなる。バーを先回りさせる');
+      scene.shake = 16;
+      scene.flash = 0.4;
+      scene.flashColor = '255,120,110';
+      buzz([80, 40, 80]);
+    }
     if (phase !== FIGHT.fighting) finishFight(phase);
   }
+}
+
+// ---------------------------------------------------------------- はじめから
+
+/** いま何を持っているか。消す前に見せて、勘違いで消させないようにする。 */
+function resetSummary() {
+  const caught = Object.keys(player.records).length;
+  const charms = Object.values(player.charms ?? {}).reduce((a, b) => a + b, 0);
+  return [
+    `所持金 ${yen(player.money)}`,
+    `図鑑 ${caught} 種（${player.catches} 匹）`,
+    `竿 ${player.rods.length} 本 ・ ルアー ${player.lures.length} 個 ・ 道具 ${player.gears.length} 個`,
+    `行ける釣り場 ${player.spots.length} か所`,
+    ...(charms ? [`お札 ${charms} 枚`] : []),
+  ];
+}
+
+function openReset() {
+  const list = $('reset-list');
+  list.replaceChildren();
+  for (const line of resetSummary()) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    list.append(li);
+  }
+  $('dlg-reset').showModal();
+}
+
+/** 保存を消して、最初の状態に戻す。 */
+function resetSave() {
+  clearTimeout(timer);
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* 消せなくても続ける */ }
+
+  player = createPlayer();
+  fight = null;
+  pending = null;
+  holding = false;
+  happening = null;
+  charmState = null;
+  announcedSpot = null;
+  displayMoney = 0;
+
+  hideResult();
+  $('log').replaceChildren();
+  scene.setHolding(false);
+  renderMoney(false);
+  backToIdle();
+  save();
+
+  log('はじめからやり直した。今日はいい天気だ。');
+  setStatus('はじめからやり直した', 'good');
 }
 
 // ---------------------------------------------------------------- アプリとして使う
@@ -638,7 +908,7 @@ function setupLogSheet() {
 function init() {
   scene = new Scene($('scene'));
   scene.start();
-  window.addEventListener('resize', () => scene.resize());
+  window.addEventListener('resize', () => { scene.resize(); renderMoney(false); });
   // サイドバーの伸縮などでも canvas の解像度を追従させる
   if (window.ResizeObserver) new ResizeObserver(() => scene.resize()).observe($('stage'));
 
@@ -680,6 +950,13 @@ function init() {
   });
   window.addEventListener('blur', release);
 
+  $('btn-reset').addEventListener('click', openReset);
+  $('reset-cancel').addEventListener('click', () => $('dlg-reset').close());
+  $('reset-ok').addEventListener('click', () => {
+    $('dlg-reset').close();
+    resetSave();
+  });
+
   $('btn-shop').addEventListener('click', () => openShop());
   $('btn-book').addEventListener('click', openBook);
   $('btn-sell').addEventListener('click', sellResult);
@@ -700,8 +977,11 @@ function init() {
     get mode() { return mode; },
     get fight() { return fight; },
     get player() { return player; },
+    get charm() { return charmState; },
+    get happening() { return happening; },
     scene,
     save,
+    reset: resetSave,
     render() { renderMoney(false); renderHud(); },
   };
 
