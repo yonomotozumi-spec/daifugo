@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 
 import { DAIMYOS, GENERALS, LINKS, PROVINCES } from '../src/data.js';
 import {
-  COST, LIMIT, RANKS, adjacent, advanceMonth, aliveDaimyos, attackPower, battleRetreat, battleRound,
-  commandList, commandsLeft, createGame, daimyoSummary, defensePower, deserialize, execute, generalsIn,
-  generalsOf, isAllied, leadCap, lordOf, provincesOf, rankName, recruitCaptured, releaseCaptured, roninIn,
-  serialize,
+  BASE_STAT, COST, LEVEL_STAT, LIMIT, MAX_LEVEL, RANKS, adjacent, advanceMonth, aliveDaimyos, attackPower,
+  battleRetreat, battleRound, buildCost, buildable, castleOf, cellBuild, cellsOf, commandList, commandsLeft,
+  createGame, daimyoSummary, defensePower, deserialize, eligibleCells, execute, generalsIn, generalsOf, isAllied,
+  isCastle, landSummary, leadCap, lordOf, neighbors8, provinceAt, provincesOf, rankName, recruitCaptured,
+  refreshProvince, releaseCaptured, roninIn, serialize, statMax, terrainAt,
 } from '../src/engine.js';
 import { runAi } from '../src/ai.js';
 
@@ -72,27 +73,61 @@ test('同じ seed なら同じ結果になる（保存して読み直せる）',
 
 // ------------------------------------------------------------------ 内政
 
-test('開墾・商業・築城は金を使って数値を上げ、武将は行動済みになる', () => {
+test('開墾・まちづくりはマスを選んで田・町のレベルを上げ、農業・商業が増える', () => {
   const s = game('oda');
   const nobunaga = lord(s, 'oda');
   const gold = s.daimyos.oda.gold;
   const agri = s.provinces.owari.agri;
-  const r = execute(s, { type: 'develop', general: nobunaga.id });
-  assert.ok(r.ok);
-  assert.equal(s.daimyos.oda.gold, gold - COST.develop);
-  assert.equal(s.provinces.owari.agri, agri + 2 + Math.floor(nobunaga.pol / 15));
+  const cmd = commandList(s, nobunaga.id).find((c) => c.type === 'develop');
+  assert.ok(cmd.enabled);
+  assert.ok(cmd.cells.length > 0, '田を作れるマスがある');
+  const [c, r] = cmd.cells[0];
+  const cost = buildCost(s, c, r, 'farm');
+  const before = cellBuild(s, c, r)?.farm || 0;
+  const res = execute(s, { type: 'develop', general: nobunaga.id, cell: [c, r] });
+  assert.ok(res.ok, res.text);
+  assert.equal(res.level, before + 1);
+  assert.equal(cellBuild(s, c, r).farm, before + 1);
+  assert.equal(s.daimyos.oda.gold, gold - cost);
+  assert.ok(s.provinces.owari.agri >= agri + LEVEL_STAT, '農業が上がる');
   assert.ok(nobunaga.acted);
   assert.equal(execute(s, { type: 'commerce', general: nobunaga.id }).ok, false, '同じ月に 2 回は動けない');
 
+  // マスを指定しなければ、いちばん安いマスに作る（CPU 用）
   const hideyoshi = generalsOf(s, 'oda').find((g) => g.name === '木下秀吉');
   const comm = s.provinces.owari.comm;
-  execute(s, { type: 'commerce', general: hideyoshi.id });
-  assert.equal(s.provinces.owari.comm, comm + 2 + Math.floor(hideyoshi.pol / 15));
+  const r2 = execute(s, { type: 'commerce', general: hideyoshi.id });
+  assert.ok(r2.ok, r2.text);
+  assert.ok(s.provinces.owari.comm >= comm + LEVEL_STAT);
+  assert.ok(cellBuild(s, r2.cell[0], r2.cell[1]).town >= 1);
 
   const niwa = generalsOf(s, 'oda').find((g) => g.name === '丹羽長秀');
   const def = s.provinces.owari.defense;
   execute(s, { type: 'fortify', general: niwa.id });
   assert.equal(s.provinces.owari.defense, def + 2 + Math.floor(niwa.pol / 15));
+});
+
+test('田や町は城か田・町の隣にしか作れず、田のマスに町は作れない', () => {
+  const s = game('oda');
+  const nobunaga = lord(s, 'oda');
+  const farmCells = eligibleCells(s, 'owari', 'farm');
+  for (const [c, r] of farmCells) {
+    assert.equal(provinceAt(c, r), 'owari');
+    assert.ok(buildable(c, r));
+    const b = cellBuild(s, c, r);
+    assert.ok(!b || !b.town, '町のあるマスは田にできない');
+  }
+  // 城から離れた、まわりに何もないマスは選べない
+  const far = cellsOf('owari').find(([c, r]) => buildable(c, r) && !cellBuild(s, c, r)
+    && !neighbors8(c, r).some(([nc, nr]) => provinceAt(nc, nr) === 'owari' && (isCastle(nc, nr) || cellBuild(s, nc, nr))));
+  if (far) {
+    const res = execute(s, { type: 'develop', general: nobunaga.id, cell: far });
+    assert.equal(res.ok, false);
+    assert.match(res.text, /作れない/);
+  }
+  // 他の国のマスも選べない
+  const other = cellsOf('mino')[0];
+  assert.equal(execute(s, { type: 'develop', general: nobunaga.id, cell: other }).ok, false);
 });
 
 test('金が足りないと内政コマンドは失敗し、一覧でも理由つきで無効になる', () => {
@@ -133,13 +168,33 @@ test('民忠が低いと徴兵できず、施しで回復する', () => {
   assert.equal(s.provinces.owari.loyalty, 20 + 5 + Math.floor(nobunaga.pol / 10));
 });
 
-test('数値は上限で止まる', () => {
+test('田がレベル 3 になるとそのマスはもう開墾できず、全部埋まると開墾できなくなる', () => {
   const s = game('oda');
-  s.provinces.owari.agri = LIMIT.agri - 1;
-  execute(s, { type: 'develop', general: lord(s, 'oda').id });
-  assert.equal(s.provinces.owari.agri, LIMIT.agri);
+  for (const [c, r] of cellsOf('owari')) {
+    if (buildable(c, r)) s.cells[`${c},${r}`] = { farm: MAX_LEVEL, town: 0 };
+  }
+  refreshProvince(s, 'owari');
+  assert.ok(s.provinces.owari.agri >= statMax('owari'), '田で埋めると農業は上限に届く');
   const cmd = commandList(s, lord(s, 'oda').id).find((c) => c.type === 'develop');
   assert.equal(cmd.enabled, false);
+  assert.match(cmd.reason, /マスがない/);
+  assert.equal(commandList(s, lord(s, 'oda').id).find((c) => c.type === 'commerce').enabled, false, '田で埋まっていると町も作れない');
+});
+
+test('マス目の地図は国ごとにまとまっていて、城は自分の国の平地にある', () => {
+  for (const p of PROVINCES) {
+    const cells = cellsOf(p.id);
+    assert.ok(cells.length >= 10, `${p.name} のマスが少なすぎる（${cells.length}）`);
+    const [c, r] = castleOf(p.id);
+    assert.equal(provinceAt(c, r), p.id, `${p.name} の城が自分の国にない`);
+    assert.equal(terrainAt(c, r), '.', `${p.name} の城が平地にない`);
+    assert.ok(isCastle(c, r));
+  }
+  const s = game('oda');
+  const sum = landSummary(s, 'mino');
+  assert.equal(sum.cells, cellsOf('mino').length);
+  assert.ok(sum.farm > 0 && sum.town > 0, '最初から田と町がある');
+  assert.equal(s.provinces.mino.agri, BASE_STAT + sum.farm * LEVEL_STAT);
 });
 
 // ------------------------------------------------------------------ 移動

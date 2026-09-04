@@ -41,13 +41,19 @@ await page.waitForFunction(() => window.sengoku.game && window.sengoku.game.play
 assert(await page.textContent('#st-name') === '織田家', '選んだ家がヘッダーに出る');
 await shot('02-map');
 
-// ---------------------------------------------------------------- 内政
+// ---------------------------------------------------------------- 内政（マスを選んで開墾）
 // 尾張は最初から選ばれていて、当主の命令欄が開いている
 await page.waitForSelector('.general.open [data-cmd="develop"]');
 const agriBefore = await game(() => window.sengoku.game.provinces.owari.agri);
 await page.click('.general.open [data-cmd="develop"]');
+await page.waitForSelector('#map-hint:not([hidden])');
+await page.waitForFunction(() => window.sengoku.view.cellPick && window.sengoku.view.cells.length > 0);
+await shot('03-pick-cell');
+// 光っているマスのひとつを選ぶ（地図クリックと同じ入口）
+await page.evaluate(() => { const c = window.sengoku.view.cells[0]; window.sengoku.select('owari', c); });
 await page.waitForFunction((a) => window.sengoku.game.provinces.owari.agri > a, agriBefore);
 assert(await game(() => window.sengoku.game.generals.g0.acted), '信長が行動済みになる');
+assert(await game(() => !window.sengoku.view.cellPick), 'マス選びが終わる');
 await shot('03-develop');
 
 // 次の武将の命令欄が自動で開く → 徴兵
@@ -68,9 +74,9 @@ await page.evaluate(() => { window.sengoku.game.provinces.owari.soldiers = 12000
 await page.waitForSelector('.general.open [data-cmd="march"]');
 await page.click('.general.open [data-cmd="march"]');
 await page.waitForSelector('#map-hint:not([hidden])');
-await page.waitForSelector('.node.target');
+await page.waitForFunction(() => window.sengoku.view.mode === 'march' && window.sengoku.view.targets.includes('mikawa'));
 await shot('04-march-targets');
-await page.click('.node[data-id="mikawa"]');
+await page.evaluate(() => window.sengoku.select('mikawa'));
 await page.waitForSelector('#dlg-troops[open]');
 await page.evaluate(() => {
   const r = document.getElementById('troops-range');
@@ -110,11 +116,15 @@ await page.waitForSelector('#dlg-roster[open] .portrait');
 await shot('08b-roster');
 await page.click('#roster-close');
 
-// ---------------------------------------------------------------- 月を終える
+// ---------------------------------------------------------------- 月を終える（CPU の番 → 月報）
 await page.click('#btn-end');
 // 命令が余っていれば確認が出る
 if (await page.isVisible('#dlg-confirm-end[open]')) await page.click('#confirm-end-ok');
-await page.waitForSelector('#dlg-report[open]');
+await page.waitForSelector('#phase:not([hidden])');
+assert((await page.textContent('#st-turn')).includes('CPU'), 'CPU の番と表示される');
+await shot('09-cpu-turn');
+await page.waitForSelector('#dlg-report[open]', { timeout: 60000 });
+assert((await page.textContent('#st-turn')).includes('あなた'), 'あなたの番に戻る');
 await shot('09-report');
 await page.click('#report-close');
 assert(await game(() => window.sengoku.game.month) === 5, '月が進む');
@@ -137,9 +147,8 @@ assert(await game(() => window.sengoku.game.provinces.mikawa.owner) === 'oda', '
 
 // ---------------------------------------------------------------- スマホ幅
 await page.setViewportSize({ width: 390, height: 844 });
-await page.click('#zoom-in');
-await page.click('#zoom-in');
-await page.waitForTimeout(800);
+await page.evaluate(() => { window.sengoku.map.setZoom(3); window.sengoku.map.centerOn('owari'); });
+await page.waitForTimeout(500);
 await shot('11-mobile');
 
 await browser.close();

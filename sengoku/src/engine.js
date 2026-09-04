@@ -13,8 +13,12 @@
 import {
   COST, DAIMYOS, GENERALS, LIMIT, LINKS, LORD_LEAD, PROVINCES, RANKS, START_MONTH, START_YEAR, initialRank,
 } from './data.js';
+import {
+  MAX_LEVEL, buildCost, cellBuild, eligibleCells, key as cellKey, provinceAt, raiseCell, seedLand, terrainAt,
+} from './land.js';
 
 export { COST, LIMIT, RANKS };
+export * from './land.js';
 
 // ------------------------------------------------------------------ 乱数
 
@@ -92,13 +96,15 @@ export function createGame({ player, seed = Date.now() % 2147483647 } = {}) {
     generals[g.id] = { ...g, homeDaimyo: g.daimyo, acted: false, status, merit: 0 };
   }
 
-  return {
-    version: 1,
+  const state = {
+    version: 2,
     seed, rng: seed >>> 0,
     player, year: START_YEAR, month: START_MONTH, turn: 0,
-    provinces, daimyos, generals,
+    provinces, daimyos, generals, cells: {},
     log: [], report: [], ended: null,
   };
+  seedLand(state);
+  return state;
 }
 
 // ------------------------------------------------------------------ 参照
@@ -171,8 +177,8 @@ export function bestGeneral(list) {
 // ------------------------------------------------------------------ コマンド
 
 export const COMMANDS = [
-  { type: 'develop', label: '開墾', icon: '🌾', desc: '農業を上げる。秋の米の収穫が増える' },
-  { type: 'commerce', label: '商業', icon: '🏪', desc: '商業を上げる。毎月の金の収入が増える' },
+  { type: 'develop', label: '開墾', icon: '🌾', desc: 'マスを選んで田を作る・田のレベルを上げる。秋の米の収穫が増える' },
+  { type: 'commerce', label: 'まちづくり', icon: '🏘️', desc: 'マスを選んで町を作る・町のレベルを上げる。毎月の金の収入が増える' },
   { type: 'fortify', label: '築城', icon: '🏯', desc: '城の防御を上げる。攻められたときに強い' },
   { type: 'recruit', label: '徴兵', icon: '🪖', desc: '金で兵を集める。民忠が少し下がる' },
   { type: 'train', label: '訓練', icon: '⚔️', desc: '兵の訓練度を上げる。戦で強くなる' },
@@ -205,8 +211,15 @@ export function commandList(state, generalId) {
   const recruits = Math.min(recruitAmount(g), LIMIT.soldiersPerProvince - p.soldiers);
   const recruitCost = Math.ceil(recruits / 100) * COST.recruitPer100;
 
-  add('develop', d.gold >= COST.develop && p.agri < LIMIT.agri, d.gold < COST.develop ? `金が足りない（${COST.develop} 必要）` : '農業はもう最大', { cost: `金${COST.develop}`, effect: `農業 +${developGain(g)}` });
-  add('commerce', d.gold >= COST.develop && p.comm < LIMIT.comm, d.gold < COST.develop ? `金が足りない（${COST.develop} 必要）` : '商業はもう最大', { cost: `金${COST.develop}`, effect: `商業 +${developGain(g)}` });
+  const farmCells = eligibleCells(state, p.id, 'farm');
+  const townCells = eligibleCells(state, p.id, 'town');
+  const cheapest = (cells, type) => cells.reduce((m, [c, r]) => Math.min(m, buildCost(state, c, r, type)), Infinity);
+  add('develop', farmCells.length > 0 && d.gold >= cheapest(farmCells, 'farm'),
+    farmCells.length === 0 ? '田を作れるマスがない' : `金が足りない（${cheapest(farmCells, 'farm')} 必要）`,
+    { cost: `金${farmCells.length ? cheapest(farmCells, 'farm') : COST.develop}〜`, effect: `田のレベル +1（農業 +${developGain(g)}）`, cells: farmCells.filter(([c, r]) => d.gold >= buildCost(state, c, r, 'farm')), cellType: 'farm' });
+  add('commerce', townCells.length > 0 && d.gold >= cheapest(townCells, 'town'),
+    townCells.length === 0 ? '町を作れるマスがない' : `金が足りない（${cheapest(townCells, 'town')} 必要）`,
+    { cost: `金${townCells.length ? cheapest(townCells, 'town') : COST.develop}〜`, effect: `町のレベル +1（商業 +${developGain(g)}）`, cells: townCells.filter(([c, r]) => d.gold >= buildCost(state, c, r, 'town')), cellType: 'town' });
   add('fortify', d.gold >= COST.fortify && p.defense < LIMIT.defense, d.gold < COST.fortify ? `金が足りない（${COST.fortify} 必要）` : '防御はもう最大', { cost: `金${COST.fortify}`, effect: `防御 +${developGain(g)}` });
   add('recruit', d.gold >= recruitCost && p.loyalty >= 30 && recruits > 0,
     p.loyalty < 30 ? '民忠が低すぎて兵が集まらない（30 以上必要）' : recruits <= 0 ? '兵はもう上限' : `金が足りない（${recruitCost} 必要）`,
@@ -246,23 +259,33 @@ export function execute(state, cmd) {
   const done = (merit) => { g.acted = true; p.commands++; addMerit(state, g, merit); };
 
   switch (cmd.type) {
-    case 'develop': {
-      if (d.gold < COST.develop) return fail('金が足りない');
-      if (p.agri >= LIMIT.agri) return fail('農業はもう最大');
-      d.gold -= COST.develop;
-      const gain = Math.min(developGain(g), LIMIT.agri - p.agri);
-      p.agri += gain;
-      done(2);
-      return { ok: true, text: pushLog(state, `${g.name}が${p.name}を開墾した（農業 +${gain}）`, 'info', { daimyos: who }).text };
-    }
+    case 'develop':
     case 'commerce': {
-      if (d.gold < COST.develop) return fail('金が足りない');
-      if (p.comm >= LIMIT.comm) return fail('商業はもう最大');
-      d.gold -= COST.develop;
-      const gain = Math.min(developGain(g), LIMIT.comm - p.comm);
-      p.comm += gain;
+      const type = cmd.type === 'develop' ? 'farm' : 'town';
+      const label = type === 'farm' ? '田' : '町';
+      const cells = eligibleCells(state, p.id, type);
+      let [c, r] = cmd.cell || [];
+      if (cmd.cell == null) {
+        // マスを指定しないときは、いちばん安いマス（CPU 用）
+        if (!cells.length) return fail(`${label}を作れるマスがない`);
+        [c, r] = cells.reduce((m, x) => (buildCost(state, x[0], x[1], type) < buildCost(state, m[0], m[1], type) ? x : m));
+      }
+      if (!cells.some(([cc, rr]) => cc === c && rr === r)) return fail(`そのマスには${label}を作れない`);
+      const cost = buildCost(state, c, r, type);
+      if (d.gold < cost) return fail(`金が足りない（${cost} 必要）`);
+      d.gold -= cost;
+      const before = type === 'farm' ? p.agri : p.comm;
+      const level = raiseCell(state, c, r, type);
+      // 政治が高い武将ほど、同じ費用で余分に伸びる
+      const bonus = Math.max(0, developGain(g) - 8);
+      if (type === 'farm') p.agri += bonus; else p.comm += bonus;
+      const gain = (type === 'farm' ? p.agri : p.comm) - before;
       done(2);
-      return { ok: true, text: pushLog(state, `${g.name}が${p.name}の商業を盛んにした（商業 +${gain}）`, 'info', { daimyos: who }).text };
+      const where = terrainAt(c, r) === 'f' && level === 1 ? '森を切り開いて' : '';
+      return {
+        ok: true, cell: [c, r], level,
+        text: pushLog(state, `${g.name}が${p.name}で${where}${label}をレベル ${level} にした（${type === 'farm' ? '農業' : '商業'} +${gain}）`, 'info', { daimyos: who }).text,
+      };
     }
     case 'fortify': {
       if (d.gold < COST.fortify) return fail('金が足りない');
@@ -720,6 +743,6 @@ function appearGenerals(state) {
 export const serialize = (state) => JSON.stringify(state);
 export function deserialize(text) {
   const s = JSON.parse(text);
-  if (!s || s.version !== 1 || !s.provinces || !s.daimyos || !s.generals) throw new Error('bad save');
+  if (!s || s.version !== 2 || !s.provinces || !s.daimyos || !s.generals || !s.cells) throw new Error('bad save');
   return s;
 }

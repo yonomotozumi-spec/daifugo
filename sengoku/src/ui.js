@@ -1,5 +1,6 @@
 /**
- * 画面の進行と DOM の操作。ルールは engine.js、CPU の思考は ai.js、顔絵は portrait.js にある。
+ * 画面の進行と DOM の操作。ルールは engine.js、CPU の思考は ai.js、
+ * 地図は map.js、顔絵は portrait.js にある。
  */
 
 import { DAIMYOS, GENERALS, LIMIT, PROVINCES } from './data.js';
@@ -9,14 +10,20 @@ import { createMap } from './map.js';
 import { portraitSVG } from './portrait.js';
 
 const $ = (id) => document.getElementById(id);
-const SAVE_KEY = 'sengoku.save.v1';
-const HELP_KEY = 'sengoku.help.seen';
+const SAVE_KEY = 'sengoku.save.v2';
+const HELP_KEY = 'sengoku.help.seen.v2';
 const fmt = (n) => Number(n).toLocaleString('ja-JP');
 const NEUTRAL = '#8d8f86';
 
 let game = null;
 let map = null;
-const view = { selected: null, mode: null, targets: [], general: null, openGeneral: null };
+let busy = false; // CPU の番の演出中
+const view = {
+  selected: null, cell: null,
+  mode: null, targets: [], general: null,       // 移動・出陣の行き先を選んでいるとき
+  cellPick: null, cells: null, cellType: null,   // 開墾・まちづくりのマスを選んでいるとき
+  openGeneral: null,
+};
 
 // ------------------------------------------------------------------ 保存
 
@@ -79,6 +86,14 @@ function commandsAvailable() {
   return n;
 }
 
+function todoSet() {
+  const s = new Set();
+  for (const p of E.provincesOf(game, game.player)) {
+    if (E.commandsLeft(game, p.id) > 0 && E.generalsIn(game, p.id).some((g) => !g.acted)) s.add(p.id);
+  }
+  return s;
+}
+
 // ------------------------------------------------------------------ 開始
 
 function buildStartDialog() {
@@ -108,7 +123,8 @@ function startGame(id) {
   $('dlg-start').close();
   save();
   renderAll();
-  centerMap();
+  map.setZoom(2.8);
+  map.centerOn(view.selected);
   let seen = false;
   try { seen = localStorage.getItem(HELP_KEY) === '1'; } catch { /* ignore */ }
   if (!seen) {
@@ -123,7 +139,7 @@ function focusCapital() {
   const capital = game.daimyos[game.player].capital;
   const selected = game.provinces[capital].owner === game.player ? capital : (E.provincesOf(game, game.player)[0]?.id ?? capital);
   const first = E.generalsIn(game, selected).find((g) => g.daimyo === game.player && !g.acted);
-  Object.assign(view, { selected, mode: null, targets: [], general: null, openGeneral: first ? first.id : null });
+  Object.assign(view, { selected, cell: null, mode: null, targets: [], general: null, cellPick: null, cells: null, cellType: null, openGeneral: first ? first.id : null });
 }
 
 function resumeGame(saved) {
@@ -131,7 +147,8 @@ function resumeGame(saved) {
   focusCapital();
   $('dlg-start').close();
   renderAll();
-  centerMap();
+  map.setZoom(2.8);
+  map.centerOn(view.selected);
   if (game.ended) showEnd();
 }
 
@@ -140,7 +157,7 @@ function resumeGame(saved) {
 function renderAll() {
   if (!game) return;
   renderStatus();
-  map.update(game, view);
+  map.update(game, { ...view, todo: todoSet() });
   renderPanel();
   renderLog();
   renderLegend();
@@ -158,7 +175,9 @@ function renderStatus() {
   $('st-power').textContent = `国 ${ps.length} ／ 兵 ${fmt(ps.reduce((s, p) => s + p.soldiers, 0))} ／ 武将 ${E.generalsOf(game, game.player).length}`;
   const left = commandsAvailable();
   $('btn-end').textContent = left ? `月を終える（命令 残り ${left}）` : '月を終える';
-  $('btn-end').disabled = Boolean(game.ended);
+  $('btn-end').disabled = Boolean(game.ended) || busy;
+  $('st-turn').textContent = busy ? 'CPU の番' : 'あなたの番';
+  $('st-turn').classList.toggle('cpu', busy);
 }
 
 function renderHint() {
@@ -166,8 +185,13 @@ function renderHint() {
   if (view.mode) {
     const g = game.generals[view.general];
     h.textContent = view.mode === 'march'
-      ? `${g.name}が攻め込む国を地図で選んでください（光っている国）。やめるときは別の場所をクリック`
-      : `${g.name}の移動先を地図で選んでください（光っている国）。やめるときは別の場所をクリック`;
+      ? `${g.name}が攻め込む国を地図で選んでください（点線で光っている国）。やめるときは別の場所をクリック`
+      : `${g.name}の移動先を地図で選んでください（点線で光っている国）。やめるときは別の場所をクリック`;
+    h.hidden = false;
+  } else if (view.cellPick) {
+    h.textContent = view.cellType === 'farm'
+      ? '田を作るマスを選んでください（光っているマス。城や田・町の隣に作れます）'
+      : '町を作るマスを選んでください（光っているマス。城や田・町の隣に作れます）';
     h.hidden = false;
   } else {
     h.hidden = true;
@@ -184,7 +208,7 @@ function renderLegend() {
 }
 
 function statRow(label, value, max, cls = '') {
-  const pct = Math.round((value / max) * 100);
+  const pct = Math.min(100, Math.round((value / max) * 100));
   return `<div class="stat ${cls}"><span class="stat-label">${label}</span><div class="bar"><i style="width:${pct}%"></i></div><span class="stat-value">${value}</span></div>`;
 }
 
@@ -198,6 +222,8 @@ function renderPanel() {
   const canReach = E.adjacent(p.id).some((id) => game.provinces[id].owner === game.player);
   const left = E.commandsLeft(game, p.id);
   const ronin = E.roninIn(game, p.id).length;
+  const land = E.landSummary(game, p.id);
+  const statMax = E.statMax(p.id);
 
   let html = `
     <div class="pp-head">
@@ -208,19 +234,36 @@ function renderPanel() {
       ${mine ? `<span class="budget${left ? '' : ' empty'}" id="budget">命令 残り ${left} / ${LIMIT.commandsPerProvince}</span>` : ''}
     </div>
     <div class="stats">
-      ${statRow('農業', p.agri, LIMIT.agri)}
-      ${statRow('商業', p.comm, LIMIT.comm)}
+      ${statRow('農業', p.agri, statMax)}
+      ${statRow('商業', p.comm, statMax)}
       ${statRow('防御', p.defense, LIMIT.defense)}
       ${statRow('民忠', p.loyalty, LIMIT.loyalty, p.loyalty < 30 ? 'warn' : '')}
       ${statRow('訓練', p.training, LIMIT.training)}
       <div class="stat soldiers"><span class="stat-label">兵</span><b>${fmt(p.soldiers)}</b><span class="stat-sub">人</span></div>
+    </div>
+    <div class="land">
+      <span>🌾 田 <b>${land.farmCells}</b> マス（レベル計 ${land.farm}）</span>
+      <span>🏘️ 町 <b>${land.townCells}</b> マス（レベル計 ${land.town}）</span>
+      <span>平地 ${land.plain}・森 ${land.forest}・山 ${land.mountain}</span>
     </div>`;
+
+  if (view.cell) {
+    const [c, r] = view.cell;
+    if (E.provinceAt(c, r) === p.id) {
+      const t = E.terrainAt(c, r);
+      const b = E.cellBuild(game, c, r);
+      const what = E.isCastle(c, r) ? `<b>🏯 ${p.name}の城</b>`
+        : b?.farm ? `<b>🌾 田</b><span class="lv">Lv ${b.farm}</span>`
+          : b?.town ? `<b>🏘️ 町</b><span class="lv">Lv ${b.town}</span>`
+            : `<b>${E.TERRAIN_NAME[t]}</b>${E.buildable(c, r) ? '　田や町を作れる' : '　何も作れない'}`;
+      html += `<div class="cell-info">${what}<span class="stat-sub">　地形：${E.TERRAIN_NAME[t]}（${c}, ${r}）</span></div>`;
+    }
+  }
 
   if (!mine && !p.owner) html += '<p class="hint">大名のいない空白地。国人衆が守っている。</p>';
   if (!mine && canReach && !allied) html += '<p class="hint">自分の国と隣り合っている。武将の「出陣」で攻め込める。</p>';
   if (mine) html += `<p class="hint">${ronin ? `在野の武将が ${ronin} 人いるらしい。「探索」で見つけて家臣に誘える。` : '在野の武将はいないようだ。'}</p>`;
 
-  // 武将：動ける者 → 行動済み の順。自分の国は全員、他国は上位だけ
   const sorted = [...gens].sort((a, b) => (a.acted - b.acted) || (b.lord - a.lord) || (b.rank - a.rank) || ((b.lead + b.valor + b.pol) - (a.lead + a.valor + a.pol)));
   const shown = mine ? sorted : sorted.slice(0, 8);
   html += `<h3>武将 <span class="count">${gens.length}</span></h3>`;
@@ -230,7 +273,7 @@ function renderPanel() {
     html += '<ul class="generals">';
     for (const g of shown) {
       const open = mine && view.openGeneral === g.id && !g.acted && left > 0;
-      const canOrder = mine && !g.acted && left > 0;
+      const canOrder = mine && !g.acted && left > 0 && !busy;
       html += `<li class="general${g.acted ? ' acted' : ''}${open ? ' open' : ''}" data-id="${g.id}">
         <div class="g-row">
           ${portrait(g, 36)}
@@ -251,7 +294,7 @@ function renderPanel() {
   html += `<p class="neighbors">隣接：${nb}</p>`;
   box.innerHTML = html;
 
-  $('btn-overview').addEventListener('click', () => { view.selected = null; cancelMode(); renderAll(); });
+  $('btn-overview').addEventListener('click', () => { view.selected = null; view.cell = null; cancelMode(); renderAll(); });
   box.querySelectorAll('[data-cmd-open]').forEach((b) => b.addEventListener('click', () => {
     const id = b.dataset.cmdOpen;
     view.openGeneral = view.openGeneral === id ? null : id;
@@ -259,7 +302,7 @@ function renderPanel() {
     renderAll();
   }));
   box.querySelectorAll('[data-detail]').forEach((b) => b.addEventListener('click', () => openGeneralDetail(b.dataset.detail)));
-  box.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => selectProvince(b.dataset.select)));
+  box.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => { selectProvince(b.dataset.select); map.centerOn(b.dataset.select); }));
   box.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click', () => {
     const g = game.generals[b.dataset.general];
     const cmd = E.commandList(game, g.id).find((c) => c.type === b.dataset.cmd);
@@ -300,7 +343,7 @@ function renderOverview(box) {
     html += `<p class="hint">同盟：${allies.map(([id, until]) => `${game.daimyos[id].name}（あと ${until - game.turn} か月）`).join('、')}</p>`;
   }
   box.innerHTML = html;
-  box.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => selectProvince(b.dataset.select)));
+  box.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => { selectProvince(b.dataset.select); map.centerOn(b.dataset.select); }));
 }
 
 function renderLog() {
@@ -344,22 +387,29 @@ function openRoster() {
     <td class="${g.acted ? 'acted' : 'free'}">${g.acted ? '行動済み' : '動ける'}</td>
   </tr>`).join('');
   tbody.querySelectorAll('[data-detail]').forEach((b) => b.addEventListener('click', () => openGeneralDetail(b.dataset.detail)));
-  tbody.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => { $('dlg-roster').close(); selectProvince(b.dataset.select); }));
+  tbody.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => { $('dlg-roster').close(); selectProvince(b.dataset.select); map.centerOn(b.dataset.select); }));
   $('roster-close').onclick = () => $('dlg-roster').close();
   openDialog($('dlg-roster'));
 }
 
 // ------------------------------------------------------------------ 操作
 
-function selectProvince(id) {
+/** 地図や一覧で国（とマス）を選んだとき */
+function selectProvince(id, cell = null) {
+  if (busy) return;
+  if (view.cellPick) {
+    if (cell && view.cells.some(([c, r]) => c === cell[0] && r === cell[1])) { pickCell(cell); return; }
+    cancelMode();
+  }
   if (view.mode) {
     if (view.targets.includes(id)) { chooseTarget(id); return; }
     cancelMode();
   }
   view.selected = id;
+  view.cell = cell;
   if (game.provinces[id].owner === game.player) {
     const first = E.generalsIn(game, id).find((g) => !g.acted);
-    view.openGeneral = first ? first.id : null;
+    view.openGeneral = view.openGeneral && game.generals[view.openGeneral]?.province === id && !game.generals[view.openGeneral].acted ? view.openGeneral : (first ? first.id : null);
   } else {
     view.openGeneral = null;
   }
@@ -370,6 +420,9 @@ function cancelMode() {
   view.mode = null;
   view.targets = [];
   view.general = null;
+  view.cellPick = null;
+  view.cells = null;
+  view.cellType = null;
 }
 
 function after() {
@@ -379,9 +432,17 @@ function after() {
 }
 
 function onCommand(g, cmd) {
+  if (busy) return;
   if (!cmd || !cmd.enabled) { if (cmd) toast(cmd.reason, 'bad'); return; }
   switch (cmd.type) {
-    case 'develop': case 'commerce': case 'fortify': case 'recruit': case 'train': case 'charity': case 'explore': {
+    case 'develop': case 'commerce':
+      cancelMode();
+      view.cellPick = { type: cmd.type, general: g.id };
+      view.cells = cmd.cells;
+      view.cellType = cmd.cellType;
+      renderAll();
+      break;
+    case 'fortify': case 'recruit': case 'train': case 'charity': case 'explore': {
       const r = E.execute(game, { type: cmd.type, general: g.id });
       toast(r.text, r.ok && r.joined !== false ? 'good' : 'bad');
       openNextGeneral(g.province);
@@ -390,6 +451,7 @@ function onCommand(g, cmd) {
       break;
     }
     case 'move': case 'march':
+      cancelMode();
       view.mode = cmd.type;
       view.targets = cmd.targets;
       view.general = g.id;
@@ -400,6 +462,18 @@ function onCommand(g, cmd) {
       break;
     default:
   }
+}
+
+/** 開墾・まちづくりのマスを決めた */
+function pickCell(cell) {
+  const { type, general } = view.cellPick;
+  const g = game.generals[general];
+  const r = E.execute(game, { type, general, cell });
+  cancelMode();
+  view.cell = cell;
+  toast(r.text, r.ok ? 'good' : 'bad');
+  if (r.ok) openNextGeneral(g.province);
+  after();
 }
 
 /** 同じ国で次に動ける武将の命令欄を開いておく */
@@ -535,7 +609,7 @@ function openBattle(b) {
   $('battle-retreat').onclick = () => { E.battleRetreat(game, b); render(); };
   $('battle-close').onclick = () => {
     dlg.close();
-    if (b.result === 'win') view.selected = b.target;
+    if (b.result === 'win') { view.selected = b.target; view.cell = null; }
     after();
     promptCaptures(b.captured.filter((id) => game.generals[id].status === 'captured'));
   };
@@ -594,13 +668,13 @@ function promptCaptures(ids) {
   openDialog(dlg);
 }
 
-// --- 月の終わり
+// --- 月の終わり（CPU の番）
 
 function tryEndMonth() {
-  if (game.ended) return;
+  if (game.ended || busy) return;
   const left = commandsAvailable();
   if (left) {
-    $('confirm-end-text').textContent = `まだ使っていない命令が ${left} 回あります。このまま月を終えますか？`;
+    $('confirm-end-text').textContent = `まだ使っていない命令が ${left} 回あります。このまま月を終えて CPU の番にしますか？`;
     $('confirm-end-ok').onclick = () => { $('dlg-confirm-end').close(); endMonth(); };
     $('confirm-end-cancel').onclick = () => $('dlg-confirm-end').close();
     openDialog($('dlg-confirm-end'));
@@ -609,12 +683,43 @@ function tryEndMonth() {
   endMonth();
 }
 
-function endMonth() {
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+async function endMonth() {
   cancelMode();
   game.report = [];
-  const before = { provinces: E.provincesOf(game, game.player).length };
+  const before = { provinces: E.provincesOf(game, game.player).length, logLength: game.log.length };
+  busy = true;
+  renderStatus();
+  const overlay = $('phase');
+  const list = $('phase-log');
+  $('phase-title').textContent = `CPU の番　${E.dateLabel(game)}`;
+  list.innerHTML = '';
+  overlay.hidden = false;
+  let skip = false;
+  $('phase-skip').onclick = () => { skip = true; };
+
   runAi(game);
+  // CPU の動きのうち、合戦とプレイヤーに関わる出来事を順に見せる
+  const entries = game.log.slice(before.logLength).filter((e) => e.kind === 'battle' || game.report.includes(e));
+  const shown = entries.slice(-14);
+  if (!shown.length) list.innerHTML = '<li>各地の大名は静かに国を治めた。</li>';
+  for (const e of shown) {
+    if (skip) break;
+    const li = document.createElement('li');
+    li.className = e.kind;
+    li.textContent = e.text;
+    list.appendChild(li);
+    list.scrollTop = list.scrollHeight;
+    map.update(game, { ...view, todo: todoSet() });
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(e.kind === 'battle' ? 260 : 140);
+  }
+  if (!skip) await sleep(250);
+
   if (!game.ended) E.advanceMonth(game);
+  busy = false;
+  overlay.hidden = true;
   view.openGeneral = null;
   if (view.selected && game.provinces[view.selected].owner === game.player) {
     const first = E.generalsIn(game, view.selected).find((g) => !g.acted);
@@ -629,7 +734,7 @@ function showReport(before) {
   const entries = game.report.filter((e) => !e.text.startsWith('収入：')).slice(-30);
   const income = game.report.find((e) => e.text.startsWith('収入：'));
   const lost = before.provinces - E.provincesOf(game, game.player).length;
-  $('report-title').textContent = `${E.dateLabel(game)}の月報`;
+  $('report-title').textContent = `${E.dateLabel(game)}の月報（あなたの番）`;
   const li = [];
   if (income) li.push(`<li class="info">${income.text}</li>`);
   for (const e of entries) li.push(`<li class="${e.kind}">${e.text}</li>`);
@@ -679,22 +784,6 @@ function showStart() {
   openDialog($('dlg-start'));
 }
 
-/** 選んでいる国（なければ本拠）が見えるように地図をスクロールする */
-function centerMap() {
-  if (!game) return;
-  const pid = view.selected || game.daimyos[game.player].capital;
-  const p = PROVINCES.find((x) => x.id === pid);
-  const box = $('map-scroll');
-  const svg = $('map');
-  const W = svg.clientWidth;
-  const H = svg.clientHeight;
-  if (!p || !W || !H) return;
-  const k = Math.min(W / 920, H / 640); // preserveAspectRatio: meet
-  const x = (W - 920 * k) / 2 + p.x * k;
-  const y = (H - 640 * k) / 2 + p.y * k;
-  box.scrollTo({ left: x - box.clientWidth / 2, top: y - box.clientHeight / 2, behavior: 'smooth' });
-}
-
 // ------------------------------------------------------------------ 起動
 
 function init() {
@@ -709,30 +798,20 @@ function init() {
   $('btn-menu').addEventListener('click', () => openDialog($('dlg-menu')));
   $('menu-close').addEventListener('click', () => $('dlg-menu').close());
   $('menu-new').addEventListener('click', () => { $('dlg-menu').close(); showStart(); });
-  $('map-wrap').addEventListener('click', (e) => {
-    if (view.mode && !e.target.closest('.node') && !e.target.closest('.map-zoom')) { cancelMode(); renderAll(); }
-  });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && view.mode && !document.querySelector('dialog[open]')) { cancelMode(); renderAll(); }
+    if (e.key === 'Escape' && (view.mode || view.cellPick) && !document.querySelector('dialog[open]')) { cancelMode(); renderAll(); }
   });
   // 「大名を選ぶ」は Esc で閉じない
   $('dlg-start').addEventListener('cancel', (e) => { if (!game) e.preventDefault(); });
-  // 地図の拡大縮小（狭い画面では最初から少し拡大しておく）
-  let zoom = window.matchMedia('(max-width: 900px)').matches ? 1.8 : 1;
-  const applyZoom = () => {
-    $('map-wrap').style.setProperty('--zoom', zoom);
-    $('zoom-out').disabled = zoom <= 1;
-    $('zoom-in').disabled = zoom >= 3;
-  };
-  $('zoom-in').addEventListener('click', () => { zoom = Math.min(3, zoom + 0.4); applyZoom(); centerMap(); });
-  $('zoom-out').addEventListener('click', () => { zoom = Math.max(1, zoom - 0.4); applyZoom(); centerMap(); });
-  applyZoom();
+  $('zoom-in').addEventListener('click', () => map.zoomBy(1.4));
+  $('zoom-out').addEventListener('click', () => map.zoomBy(1 / 1.4));
 
   showStart();
 
   window.sengoku = {
     get game() { return game; },
-    view, E, runAi,
+    get busy() { return busy; },
+    view, E, runAi, map,
     select: selectProvince, endMonth, render: renderAll, start: startGame,
   };
 }
