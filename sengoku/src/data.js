@@ -4,7 +4,7 @@
  *
  *   国（province） … 44 か国。x / y は地図上の位置（viewBox 920 x 640）
  *   大名（daimyo） … 19 家。国を持たない「空白地」は国人衆が守っている
- *   武将（general） … 各家に 3〜6 人。統率 / 武勇 / 政治 の 3 能力
+ *   武将（general） … 約 1150 人（generals.js）。統率 / 武勇 / 政治 の 3 能力と身分
  *
  * 数字はすべてゲーム用の目安で、史実の石高などとは一致しない。
  */
@@ -132,112 +132,37 @@ export const DAIMYOS = D.map(([id, name, color, capital, gold, rice, intro]) => 
 
 // ------------------------------------------------------------------ 武将
 
-// [名前, 大名, 国, 統率, 武勇, 政治]  先頭の 1 人が当主
-const G = [
-  ['織田信長', 'oda', 'owari', 95, 88, 92],
-  ['柴田勝家', 'oda', 'owari', 85, 90, 50],
-  ['木下秀吉', 'oda', 'owari', 80, 60, 95],
-  ['丹羽長秀', 'oda', 'owari', 75, 65, 85],
-  ['前田利家', 'oda', 'owari', 78, 88, 60],
+import { GENERAL_ROWS } from './generals.js';
 
-  ['今川義元', 'imagawa', 'suruga', 80, 60, 85],
-  ['朝比奈泰朝', 'imagawa', 'totomi', 70, 72, 55],
-  ['岡部元信', 'imagawa', 'suruga', 76, 80, 50],
-  ['瀬名氏俊', 'imagawa', 'totomi', 55, 50, 65],
-
-  ['松平元康', 'matsudaira', 'mikawa', 90, 80, 88],
-  ['酒井忠次', 'matsudaira', 'mikawa', 82, 72, 70],
-  ['石川数正', 'matsudaira', 'mikawa', 70, 55, 80],
-  ['本多忠勝', 'matsudaira', 'mikawa', 88, 98, 40],
-
-  ['武田信玄', 'takeda', 'kai', 98, 85, 92],
-  ['山県昌景', 'takeda', 'shinano', 90, 92, 50],
-  ['馬場信春', 'takeda', 'shinano', 88, 85, 60],
-  ['高坂昌信', 'takeda', 'kai', 85, 70, 65],
-  ['真田幸隆', 'takeda', 'shinano', 85, 70, 80],
-
-  ['上杉謙信', 'uesugi', 'echigo', 100, 100, 65],
-  ['直江実綱', 'uesugi', 'echigo', 70, 55, 85],
-  ['柿崎景家', 'uesugi', 'kozuke', 80, 90, 30],
-  ['宇佐美定満', 'uesugi', 'echigo', 85, 65, 70],
-  ['斎藤朝信', 'uesugi', 'kozuke', 75, 75, 60],
-
-  ['北条氏康', 'hojo', 'sagami', 90, 75, 95],
-  ['北条綱成', 'hojo', 'musashi', 88, 90, 50],
-  ['北条氏政', 'hojo', 'sagami', 70, 60, 75],
-  ['松田憲秀', 'hojo', 'musashi', 65, 50, 75],
-  ['北条幻庵', 'hojo', 'sagami', 60, 45, 88],
-
-  ['伊達晴宗', 'date', 'mutsu', 75, 65, 80],
-  ['伊達輝宗', 'date', 'dewa', 70, 60, 75],
-  ['鬼庭良直', 'date', 'mutsu', 70, 80, 50],
-  ['伊達実元', 'date', 'dewa', 70, 72, 55],
-
-  ['佐竹義昭', 'satake', 'hitachi', 75, 70, 70],
-  ['佐竹義重', 'satake', 'hitachi', 85, 88, 70],
-  ['太田資正', 'satake', 'hitachi', 78, 80, 60],
-
-  ['斎藤義龍', 'saito', 'mino', 82, 78, 70],
-  ['竹中半兵衛', 'saito', 'mino', 90, 45, 80],
-  ['稲葉一鉄', 'saito', 'mino', 78, 82, 60],
-  ['安藤守就', 'saito', 'mino', 65, 60, 60],
-
-  ['浅井長政', 'azai', 'kitaomi', 85, 85, 65],
-  ['遠藤直経', 'azai', 'kitaomi', 72, 85, 45],
-  ['磯野員昌', 'azai', 'kitaomi', 80, 90, 35],
-
-  ['朝倉義景', 'asakura', 'echizen', 45, 40, 65],
-  ['朝倉景鏡', 'asakura', 'echizen', 60, 60, 55],
-  ['山崎吉家', 'asakura', 'echizen', 72, 70, 50],
-  ['真柄直隆', 'asakura', 'echizen', 60, 95, 20],
-
-  ['六角義賢', 'rokkaku', 'minamiomi', 65, 55, 70],
-  ['蒲生定秀', 'rokkaku', 'minamiomi', 70, 65, 75],
-  ['蒲生賢秀', 'rokkaku', 'minamiomi', 65, 60, 70],
-
-  ['三好長慶', 'miyoshi', 'yamashiro', 88, 70, 88],
-  ['松永久秀', 'miyoshi', 'yamashiro', 85, 65, 95],
-  ['三好義賢', 'miyoshi', 'awa', 80, 75, 70],
-  ['篠原長房', 'miyoshi', 'sanuki', 70, 60, 80],
-  ['三好長逸', 'miyoshi', 'settsu', 72, 70, 60],
-  ['十河一存', 'miyoshi', 'settsu', 75, 88, 40],
-
-  ['毛利元就', 'mori', 'aki', 95, 70, 100],
-  ['吉川元春', 'mori', 'aki', 92, 95, 55],
-  ['小早川隆景', 'mori', 'bingo', 90, 70, 92],
-  ['毛利隆元', 'mori', 'nagato', 65, 50, 80],
-  ['宍戸隆家', 'mori', 'nagato', 65, 70, 60],
-
-  ['尼子晴久', 'amago', 'izumo', 78, 70, 70],
-  ['尼子義久', 'amago', 'izumo', 55, 50, 60],
-  ['山中幸盛', 'amago', 'hoki', 80, 92, 45],
-  ['亀井秀綱', 'amago', 'hoki', 60, 55, 70],
-
-  ['長宗我部国親', 'chosokabe', 'tosa', 75, 70, 65],
-  ['長宗我部元親', 'chosokabe', 'tosa', 88, 75, 85],
-  ['吉良親貞', 'chosokabe', 'tosa', 70, 75, 55],
-  ['谷忠澄', 'chosokabe', 'tosa', 50, 40, 80],
-
-  ['大友宗麟', 'otomo', 'bungo', 70, 50, 88],
-  ['立花道雪', 'otomo', 'chikuzen', 95, 90, 70],
-  ['高橋紹運', 'otomo', 'chikuzen', 88, 85, 65],
-  ['吉弘鑑理', 'otomo', 'bungo', 70, 70, 55],
-
-  ['龍造寺隆信', 'ryuzoji', 'hizen', 85, 88, 60],
-  ['鍋島直茂', 'ryuzoji', 'hizen', 88, 80, 90],
-  ['成松信勝', 'ryuzoji', 'hizen', 60, 85, 30],
-
-  ['島津貴久', 'shimazu', 'satsuma', 80, 70, 85],
-  ['島津義久', 'shimazu', 'satsuma', 78, 60, 90],
-  ['島津義弘', 'shimazu', 'hyuga', 95, 98, 60],
-  ['島津歳久', 'shimazu', 'satsuma', 75, 65, 80],
-  ['島津家久', 'shimazu', 'hyuga', 88, 90, 55],
+/** 身分。上の身分ほど多くの兵を率いて出陣・移動できる。功績がたまると昇進する */
+export const RANKS = [
+  { id: 0, name: '足軽頭', lead: 1500, merit: 0 },
+  { id: 1, name: '侍大将', lead: 3000, merit: 30 },
+  { id: 2, name: '部将', lead: 5000, merit: 80 },
+  { id: 3, name: '家老', lead: 8000, merit: 200 },
 ];
+export const LORD_LEAD = 12000; // 当主が率いられる兵
 
-export const GENERALS = G.map(([name, daimyo, province, lead, valor, pol], i) => ({
-  id: `g${i}`, name, daimyo, province, lead, valor, pol,
-  lord: i === 0 || G[i - 1][1] !== daimyo,
-}));
+/** 能力の合計から最初の身分を決める */
+export function initialRank(lead, valor, pol) {
+  const sum = lead + valor + pol;
+  if (sum >= 225) return 3;
+  if (sum >= 190) return 2;
+  if (sum >= 155) return 1;
+  return 0;
+}
+
+const seenDaimyo = new Set();
+export const GENERALS = GENERAL_ROWS.map(([name, daimyo, province, lead, valor, pol, appear], i) => {
+  const lord = Boolean(daimyo) && !seenDaimyo.has(daimyo);
+  if (daimyo) seenDaimyo.add(daimyo);
+  return {
+    id: `g${i}`, name, daimyo, province, lead, valor, pol,
+    appear: appear || null,
+    lord,
+    rank: lord ? 3 : initialRank(lead, valor, pol),
+  };
+});
 
 // ------------------------------------------------------------------ ゲームの定数
 
@@ -251,6 +176,7 @@ export const COST = {
   charity: 150,     // 施し で配る米
   goodwill: 60,     // 親善 の金
   alliance: 150,    // 同盟 の金
+  explore: 20,      // 探索 の金
   marchRicePer100: 5, // 出陣 100 人あたりの米
 };
 
@@ -259,4 +185,5 @@ export const LIMIT = {
   soldiersPerProvince: 15000,
   allianceMonths: 24,
   battleRounds: 10,
+  commandsPerProvince: 3, // 1 つの国で 1 か月に出せる命令の数
 };

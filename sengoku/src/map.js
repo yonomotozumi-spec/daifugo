@@ -4,7 +4,7 @@
  */
 
 import { LINKS, PROVINCES } from './data.js';
-import { generalsIn } from './engine.js';
+import { commandsLeft, generalsIn } from './engine.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const NEUTRAL = '#8d8f86';
@@ -108,7 +108,7 @@ export function createMap(svg, { onSelect }) {
       const gensEl = g.querySelector('.gens');
       gensEl.setAttribute('visibility', gens.length ? 'visible' : 'hidden');
       gensEl.querySelector('text').textContent = gens.length;
-      const todo = mine && gens.some((x) => !x.acted);
+      const todo = mine && gens.some((x) => !x.acted) && commandsLeft(state, p.id) > 0;
       g.querySelector('.todo').setAttribute('visibility', todo ? 'visible' : 'hidden');
       g.querySelector('title').textContent = `${p.name}（${owner ? owner.name : '空白地'}）兵 ${s.soldiers}${gens.length ? `／武将 ${gens.map((x) => x.name).join('・')}` : ''}`;
       g.classList.toggle('mine', mine);

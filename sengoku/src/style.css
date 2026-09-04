@@ -392,6 +392,7 @@ dialog menu .topbar-link + .topbar-link { margin-right: 0; margin-left: -4px; }
 .daimyo-card:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--c); }
 .dc-head { display: flex; align-items: center; gap: 4px; font-size: 16px; }
 .dc-head .dot { background: var(--c); }
+.dc-head .portrait { width: 30px; height: 36px; border-radius: 5px; }
 .dc-stars { margin-left: auto; color: var(--gold); font-size: 12px; }
 .dc-lord { font-size: 12px; color: var(--muted); }
 .dc-intro { font-size: 12px; line-height: 1.5; }
@@ -448,6 +449,69 @@ dialog menu .topbar-link + .topbar-link { margin-right: 0; margin-left: -4px; }
 .help-table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
 .help-table th { text-align: left; white-space: nowrap; padding: 4px 10px 4px 0; vertical-align: top; }
 .help-table td { padding: 4px 0; color: var(--muted); }
+
+/* ------------------------------------------------------------ 武将の顔絵・身分 */
+
+.portrait { display: block; border-radius: 6px; flex: none; }
+.g-row .portrait { width: 36px; height: 43px; }
+.g-name { cursor: pointer; }
+.g-name:hover { text-decoration: underline dotted; }
+.rank {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+  margin-left: 5px;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+.rank.r3 { background: rgba(226, 184, 77, 0.25); color: #ffe9a8; }
+.rank.r2 { background: rgba(140, 200, 255, 0.2); color: #cfe6ff; }
+.g-row { flex-wrap: nowrap; }
+.g-row .g-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.g-stats { flex-wrap: wrap; }
+.budget {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(226, 184, 77, 0.6);
+  color: #ffe9a8;
+  white-space: nowrap;
+}
+.budget.empty { border-color: var(--line); color: var(--muted); }
+.generals-more { font-size: 12px; color: var(--muted); margin: 6px 0; }
+
+.gd-head { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
+.gd-portrait .portrait { width: 110px; height: 132px; border-radius: 10px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); }
+.gd-sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+#gd-stats .stat.wide { grid-template-columns: 34px auto 1fr; }
+#gd-stats .stat.wide b { font-size: 16px; }
+
+.capture-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 50dvh; overflow: auto; }
+.capture-list li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); }
+.capture-list .portrait { width: 40px; height: 48px; }
+.capture-list .cap-main { flex: 1; min-width: 0; }
+.capture-list .cap-main b { display: block; }
+.capture-list .cap-main span { font-size: 12px; color: var(--muted); }
+.capture-list .cap-result { font-size: 13px; color: var(--muted); }
+.capture-list .cap-result.good { color: var(--good); }
+
+.roster-wrap { max-height: 60dvh; }
+.roster td, .roster th { padding: 4px 8px; }
+.roster .portrait { width: 30px; height: 36px; }
+.roster .name-btn { background: none; border: none; padding: 0; color: var(--text); font-weight: 700; text-decoration: underline dotted; }
+.roster .acted { color: var(--muted); }
+.roster .free { color: var(--good); }
+
+.battle-side .portrait { width: 56px; height: 67px; }
+.battle-side { grid-template-columns: auto 1fr; grid-template-areas: "p label" "p name" "p soldiers" "meter meter"; column-gap: 10px; }
+.battle-side .portrait { grid-area: p; }
+.battle-side .side-label { grid-area: label; }
+.battle-side .side-name { grid-area: name; }
+.battle-side .side-soldiers { grid-area: soldiers; }
+.battle-side .meter { grid-area: meter; }
 
 /* ------------------------------------------------------------ 狭い画面 */
 

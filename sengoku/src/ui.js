@@ -1,16 +1,18 @@
 /**
- * 画面の進行と DOM の操作。ルールは engine.js、CPU の思考は ai.js にある。
+ * 画面の進行と DOM の操作。ルールは engine.js、CPU の思考は ai.js、顔絵は portrait.js にある。
  */
 
 import { DAIMYOS, GENERALS, LIMIT, PROVINCES } from './data.js';
 import * as E from './engine.js';
 import { runAi } from './ai.js';
 import { createMap } from './map.js';
+import { portraitSVG } from './portrait.js';
 
 const $ = (id) => document.getElementById(id);
 const SAVE_KEY = 'sengoku.save.v1';
 const HELP_KEY = 'sengoku.help.seen';
 const fmt = (n) => Number(n).toLocaleString('ja-JP');
+const NEUTRAL = '#8d8f86';
 
 let game = null;
 let map = null;
@@ -53,8 +55,11 @@ const ownerName = (pid) => {
 };
 const ownerColor = (pid) => {
   const o = game.provinces[pid].owner;
-  return o ? game.daimyos[o].color : '#8d8f86';
+  return o ? game.daimyos[o].color : NEUTRAL;
 };
+const daimyoColor = (id) => (id && game.daimyos[id] ? game.daimyos[id].color : NEUTRAL);
+const portrait = (g, size) => portraitSVG(g, daimyoColor(g.daimyo), size);
+const rankTag = (g) => `<span class="rank r${g.lord ? 3 : g.rank}">${E.rankName(g)}</span>`;
 
 function difficulty(id) {
   const n = PROVINCES.filter((p) => p.owner === id).length;
@@ -62,6 +67,16 @@ function difficulty(id) {
   if (n >= 3) return '★';
   if (n === 2) return '★★';
   return '★★★';
+}
+
+/** 今月まだ使える命令の数（動ける武将がいる国だけ数える） */
+function commandsAvailable() {
+  let n = 0;
+  for (const p of E.provincesOf(game, game.player)) {
+    const free = E.generalsIn(game, p.id).filter((g) => !g.acted).length;
+    n += Math.min(free, E.commandsLeft(game, p.id));
+  }
+  return n;
 }
 
 // ------------------------------------------------------------------ 開始
@@ -72,14 +87,15 @@ function buildStartDialog() {
   for (const d of DAIMYOS) {
     const lord = GENERALS.find((g) => g.daimyo === d.id && g.lord);
     const n = PROVINCES.filter((p) => p.owner === d.id).length;
+    const count = GENERALS.filter((g) => g.daimyo === d.id && !g.appear).length;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'daimyo-card';
     btn.dataset.id = d.id;
     btn.style.setProperty('--c', d.color);
     btn.innerHTML = `
-      <span class="dc-head"><i class="dot"></i><b>${d.name}</b><span class="dc-stars">${difficulty(d.id)}</span></span>
-      <span class="dc-lord">当主 ${lord.name}　${n} か国</span>
+      <span class="dc-head">${portraitSVG(lord, d.color, 34)}<b>${d.name}</b><span class="dc-stars">${difficulty(d.id)}</span></span>
+      <span class="dc-lord">当主 ${lord.name}　${n} か国・武将 ${count} 人</span>
       <span class="dc-intro">${d.intro}</span>`;
     btn.addEventListener('click', () => startGame(d.id));
     grid.appendChild(btn);
@@ -139,9 +155,9 @@ function renderStatus() {
   $('st-gold').textContent = fmt(me.gold);
   $('st-rice').textContent = fmt(me.rice);
   const ps = E.provincesOf(game, game.player);
-  $('st-power').textContent = `国 ${ps.length} ／ 兵 ${fmt(ps.reduce((s, p) => s + p.soldiers, 0))}`;
-  const left = E.generalsOf(game, game.player).filter((g) => !g.acted).length;
-  $('btn-end').textContent = left ? `月を終える（未行動 ${left}）` : '月を終える';
+  $('st-power').textContent = `国 ${ps.length} ／ 兵 ${fmt(ps.reduce((s, p) => s + p.soldiers, 0))} ／ 武将 ${E.generalsOf(game, game.player).length}`;
+  const left = commandsAvailable();
+  $('btn-end').textContent = left ? `月を終える（命令 残り ${left}）` : '月を終える';
   $('btn-end').disabled = Boolean(game.ended);
 }
 
@@ -164,7 +180,7 @@ function renderLegend() {
     .map((d) => E.daimyoSummary(game, d.id))
     .sort((a, b) => b.score - a.score);
   box.innerHTML = list.map((d) => `<span class="chip${d.id === game.player ? ' me' : ''}"><i class="dot" style="background:${d.color}"></i>${d.name.replace(/家$/, '')} ${d.provinces}</span>`).join('')
-    + '<span class="chip"><i class="dot" style="background:#8d8f86"></i>空白地</span>';
+    + `<span class="chip"><i class="dot" style="background:${NEUTRAL}"></i>空白地</span>`;
 }
 
 function statRow(label, value, max, cls = '') {
@@ -180,6 +196,8 @@ function renderPanel() {
   const gens = E.generalsIn(game, p.id);
   const allied = E.isAllied(game, game.player, p.owner);
   const canReach = E.adjacent(p.id).some((id) => game.provinces[id].owner === game.player);
+  const left = E.commandsLeft(game, p.id);
+  const ronin = E.roninIn(game, p.id).length;
 
   let html = `
     <div class="pp-head">
@@ -187,6 +205,7 @@ function renderPanel() {
       <i class="dot" style="background:${ownerColor(p.id)}"></i>
       <h2>${p.name}</h2>
       <span class="pp-owner">${ownerName(p.id)}${allied ? '（同盟中）' : ''}</span>
+      ${mine ? `<span class="budget${left ? '' : ' empty'}" id="budget">命令 残り ${left} / ${LIMIT.commandsPerProvince}</span>` : ''}
     </div>
     <div class="stats">
       ${statRow('農業', p.agri, LIMIT.agri)}
@@ -199,24 +218,33 @@ function renderPanel() {
 
   if (!mine && !p.owner) html += '<p class="hint">大名のいない空白地。国人衆が守っている。</p>';
   if (!mine && canReach && !allied) html += '<p class="hint">自分の国と隣り合っている。武将の「出陣」で攻め込める。</p>';
+  if (mine) html += `<p class="hint">${ronin ? `在野の武将が ${ronin} 人いるらしい。「探索」で見つけて家臣に誘える。` : '在野の武将はいないようだ。'}</p>`;
 
+  // 武将：動ける者 → 行動済み の順。自分の国は全員、他国は上位だけ
+  const sorted = [...gens].sort((a, b) => (a.acted - b.acted) || (b.lord - a.lord) || (b.rank - a.rank) || ((b.lead + b.valor + b.pol) - (a.lead + a.valor + a.pol)));
+  const shown = mine ? sorted : sorted.slice(0, 8);
   html += `<h3>武将 <span class="count">${gens.length}</span></h3>`;
   if (!gens.length) {
     html += `<p class="hint">${p.owner ? 'この国に武将はいない。' : '国人衆が治めている。'}</p>`;
   } else {
     html += '<ul class="generals">';
-    for (const g of gens) {
-      const open = mine && view.openGeneral === g.id && !g.acted;
+    for (const g of shown) {
+      const open = mine && view.openGeneral === g.id && !g.acted && left > 0;
+      const canOrder = mine && !g.acted && left > 0;
       html += `<li class="general${g.acted ? ' acted' : ''}${open ? ' open' : ''}" data-id="${g.id}">
         <div class="g-row">
-          <span class="g-name">${g.name}${g.lord ? '<em class="lord">当主</em>' : ''}</span>
-          <span class="g-stats"><span>統 ${g.lead}</span><span>武 ${g.valor}</span><span>政 ${g.pol}</span></span>
-          ${mine ? (g.acted ? '<span class="tag">行動済み</span>' : `<button type="button" class="small${open ? ' ghost' : ' primary'}" data-cmd-open="${g.id}">${open ? '閉じる' : '命令'}</button>`) : ''}
+          ${portrait(g, 36)}
+          <div class="g-main">
+            <span class="g-name" data-detail="${g.id}" title="くわしく見る">${g.name}${rankTag(g)}</span>
+            <span class="g-stats"><span>統 ${g.lead}</span><span>武 ${g.valor}</span><span>政 ${g.pol}</span></span>
+          </div>
+          ${mine ? (g.acted ? '<span class="tag">行動済み</span>' : canOrder ? `<button type="button" class="small${open ? ' ghost' : ' primary'}" data-cmd-open="${g.id}">${open ? '閉じる' : '命令'}</button>` : '') : ''}
         </div>
         ${open ? renderCommands(g) : ''}
       </li>`;
     }
     html += '</ul>';
+    if (shown.length < gens.length) html += `<p class="generals-more">ほか ${gens.length - shown.length} 人</p>`;
   }
 
   const nb = E.adjacent(p.id).map((id) => `<button type="button" class="link" data-select="${id}">${game.provinces[id].name}</button>`).join('・');
@@ -230,6 +258,7 @@ function renderPanel() {
     cancelMode();
     renderAll();
   }));
+  box.querySelectorAll('[data-detail]').forEach((b) => b.addEventListener('click', () => openGeneralDetail(b.dataset.detail)));
   box.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => selectProvince(b.dataset.select)));
   box.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click', () => {
     const g = game.generals[b.dataset.general];
@@ -252,15 +281,16 @@ function renderCommands(g) {
 function renderOverview(box) {
   const ps = E.provincesOf(game, game.player);
   let html = '<div class="pp-head"><h2>自分の国</h2></div>';
-  html += '<p class="hint">国をクリックすると、そこにいる武将に命令できます。地図の自分の国をクリックしても同じです。</p>';
+  html += `<p class="hint">国をクリックすると、そこにいる武将に命令できます（1 つの国につき月 ${LIMIT.commandsPerProvince} 回まで）。地図の自分の国をクリックしても同じです。</p>`;
   html += '<ul class="overview">';
   for (const p of ps) {
     const gens = E.generalsIn(game, p.id);
-    const left = gens.filter((g) => !g.acted).length;
+    const free = gens.filter((g) => !g.acted).length;
+    const left = Math.min(free, E.commandsLeft(game, p.id));
     html += `<li><button type="button" class="ov" data-select="${p.id}">
       <b>${p.name}</b><span>兵 ${fmt(p.soldiers)}</span>
       <span>武将 ${gens.length}</span>
-      <span class="${left ? 'todo' : 'done'}">${left ? `未行動 ${left}` : gens.length ? '行動済み' : '—'}</span>
+      <span class="${left ? 'todo' : 'done'}">${left ? `命令 残り ${left}` : gens.length ? '命令済み' : '武将なし'}</span>
     </button></li>`;
   }
   html += '</ul>';
@@ -277,6 +307,46 @@ function renderLog() {
   const ol = $('log');
   const entries = game.log.slice(-40).reverse();
   ol.innerHTML = entries.map((e) => `<li class="${e.kind}"><span class="log-date">${e.date}</span>${e.text}</li>`).join('');
+}
+
+// ------------------------------------------------------------------ 武将の詳細・一覧
+
+function openGeneralDetail(id) {
+  const g = game.generals[id];
+  const dlg = $('dlg-general');
+  $('gd-portrait').innerHTML = portrait(g, 110);
+  $('gd-name').innerHTML = `${g.name}${rankTag(g)}`;
+  const family = g.daimyo ? game.daimyos[g.daimyo].name : g.status === 'captured' ? '捕虜' : '在野';
+  const where = g.province ? E.provinceName(g.province) : '—';
+  const next = g.lord ? null : E.RANKS[g.rank + 1];
+  $('gd-sub').textContent = `${family}　${where}にいる${g.acted ? '（今月は行動済み）' : ''}`;
+  $('gd-stats').innerHTML = `
+    ${statRow('統率', g.lead, 100)}
+    ${statRow('武勇', g.valor, 100)}
+    ${statRow('政治', g.pol, 100)}
+    <div class="stat wide"><span class="stat-label">功績</span><b>${g.merit || 0}</b><span class="stat-sub">${next ? `（${next.name}まであと ${Math.max(0, next.merit - (g.merit || 0))}）` : '（これ以上は昇進しない）'}</span></div>
+    <div class="stat wide"><span class="stat-label">率兵</span><b>${fmt(E.leadCap(g))}</b><span class="stat-sub">人まで率いて出陣・移動できる</span></div>`;
+  $('gd-note').textContent = g.appear ? `${g.appear} 年に登場した武将` : '1560 年から活躍している武将';
+  $('gd-close').onclick = () => dlg.close();
+  openDialog(dlg);
+}
+
+function openRoster() {
+  const gs = E.generalsOf(game, game.player).sort((a, b) => (b.lord - a.lord) || (b.rank - a.rank) || ((b.lead + b.valor + b.pol) - (a.lead + a.valor + a.pol)));
+  $('roster-count').textContent = `${gs.length} 人`;
+  const tbody = $('roster-table').querySelector('tbody');
+  tbody.innerHTML = gs.map((g) => `<tr>
+    <td>${portrait(g, 30)}</td>
+    <td><button type="button" class="name-btn" data-detail="${g.id}">${g.name}</button></td>
+    <td>${rankTag(g)}</td>
+    <td>${g.lead}</td><td>${g.valor}</td><td>${g.pol}</td><td>${g.merit || 0}</td>
+    <td><button type="button" class="link" data-select="${g.province}">${E.provinceName(g.province)}</button></td>
+    <td class="${g.acted ? 'acted' : 'free'}">${g.acted ? '行動済み' : '動ける'}</td>
+  </tr>`).join('');
+  tbody.querySelectorAll('[data-detail]').forEach((b) => b.addEventListener('click', () => openGeneralDetail(b.dataset.detail)));
+  tbody.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => { $('dlg-roster').close(); selectProvince(b.dataset.select); }));
+  $('roster-close').onclick = () => $('dlg-roster').close();
+  openDialog($('dlg-roster'));
 }
 
 // ------------------------------------------------------------------ 操作
@@ -311,11 +381,12 @@ function after() {
 function onCommand(g, cmd) {
   if (!cmd || !cmd.enabled) { if (cmd) toast(cmd.reason, 'bad'); return; }
   switch (cmd.type) {
-    case 'develop': case 'commerce': case 'fortify': case 'recruit': case 'train': case 'charity': {
+    case 'develop': case 'commerce': case 'fortify': case 'recruit': case 'train': case 'charity': case 'explore': {
       const r = E.execute(game, { type: cmd.type, general: g.id });
-      toast(r.text, r.ok ? 'good' : 'bad');
+      toast(r.text, r.ok && r.joined !== false ? 'good' : 'bad');
       openNextGeneral(g.province);
       after();
+      if (r.joined) openGeneralDetail(r.found);
       break;
     }
     case 'move': case 'march':
@@ -346,15 +417,15 @@ function chooseTarget(targetId) {
   const march = view.mode === 'march';
   const dlg = $('dlg-troops');
   const range = $('troops-range');
-  const max = from.soldiers;
+  const max = Math.min(from.soldiers, E.leadCap(g));
   range.max = max;
   range.min = march ? Math.min(100, max) : 0;
   range.step = 100;
   range.value = march ? Math.max(100, Math.floor((max * 0.8) / 100) * 100) : Math.floor((max * 0.5) / 100) * 100;
   $('troops-title').textContent = march ? `${to.name}へ出陣` : `${to.name}へ移動`;
   $('troops-text').textContent = march
-    ? `${g.name}が${from.name}から${to.name}（${ownerName(targetId)}）へ攻め込みます。守り手は兵 ${fmt(to.soldiers)}、防御 ${to.defense}。何人で出陣しますか？`
-    : `${g.name}が${from.name}から${to.name}へ移ります。何人連れて行きますか？（0 でも移動できます）`;
+    ? `${E.rankName(g)}の${g.name}が${from.name}から${to.name}（${ownerName(targetId)}）へ攻め込みます。守り手は兵 ${fmt(to.soldiers)}、防御 ${to.defense}。何人で出陣しますか？（${g.name}が率いられるのは ${fmt(E.leadCap(g))} まで）`
+    : `${g.name}が${from.name}から${to.name}へ移ります。何人連れて行きますか？（0 でも移動できます。率いられるのは ${fmt(E.leadCap(g))} まで）`;
 
   const refresh = () => {
     const n = Number(range.value);
@@ -366,7 +437,7 @@ function chooseTarget(targetId) {
       $('troops-note').textContent = `兵糧 米 ${rice}（残り ${fmt(game.daimyos[game.player].rice)}）／ 戦力の見立て：${odds}（${ratio.toFixed(1)} 倍）`;
       $('troops-ok').disabled = n < 100 || game.daimyos[game.player].rice < rice;
     } else {
-      $('troops-note').textContent = `${from.name}に残る兵：${fmt(max - n)}`;
+      $('troops-note').textContent = `${from.name}に残る兵：${fmt(from.soldiers - n)}`;
       $('troops-ok').disabled = false;
     }
   };
@@ -439,8 +510,13 @@ function openBattle(b) {
   $('battle-title').textContent = `${game.provinces[b.target].name}の戦い`;
   att.querySelector('.side-name').textContent = `${game.daimyos[b.attackerDaimyo].name}　${ag.name}`;
   def.querySelector('.side-name').textContent = `${defOwner}　${dg ? dg.name : '国人衆'}`;
-  att.style.setProperty('--c', game.daimyos[b.attackerDaimyo].color);
-  def.style.setProperty('--c', b.defenderDaimyo ? game.daimyos[b.defenderDaimyo].color : '#8d8f86');
+  att.style.setProperty('--c', daimyoColor(b.attackerDaimyo));
+  def.style.setProperty('--c', daimyoColor(b.defenderDaimyo));
+  for (const side of [att, def]) side.querySelector('.portrait')?.remove();
+  att.insertAdjacentHTML('afterbegin', portraitSVG(ag, daimyoColor(b.attackerDaimyo), 56));
+  def.insertAdjacentHTML('afterbegin', dg
+    ? portraitSVG(dg, daimyoColor(b.defenderDaimyo), 56)
+    : portraitSVG({ name: `国人衆${b.target}`, lead: 55, valor: 55, pol: 40 }, NEUTRAL, 56));
 
   const render = () => {
     att.querySelector('.side-soldiers').textContent = `兵 ${fmt(Math.max(0, b.attSoldiers))} ／ ${fmt(b.attStart)}`;
@@ -467,28 +543,54 @@ function openBattle(b) {
   openDialog(dlg);
 }
 
+/** 捕らえた武将の一覧。ひとりずつ「誘う」か「解放」、または残りをまとめて解放 */
 function promptCaptures(ids) {
   if (!ids.length) return;
-  const [id, ...rest] = ids;
-  const g = game.generals[id];
   const dlg = $('dlg-capture');
-  $('capture-text').textContent = `${g.name}（統率 ${g.lead}・武勇 ${g.valor}・政治 ${g.pol}）を捕らえました。`;
-  $('capture-note').textContent = g.lord ? '相手の当主です。家臣になることはめったにありません。' : '家臣に誘うと、断られることもあります。断られた武将はもとの家へ帰ります。';
-  $('capture-recruit').onclick = () => {
-    dlg.close();
-    const r = E.recruitCaptured(game, id, game.player);
-    if (!r.joined) E.releaseCaptured(game, id);
-    toast(r.text, r.joined ? 'good' : 'bad');
-    after();
-    promptCaptures(rest);
+  const list = $('capture-list');
+  const results = {};
+  const render = () => {
+    list.innerHTML = ids.map((id) => {
+      const g = game.generals[id];
+      const done = results[id];
+      return `<li>
+        ${portraitSVG(g, daimyoColor(g.homeDaimyo), 40)}
+        <div class="cap-main"><b>${g.name}${rankTag(g)}</b><span>統 ${g.lead}・武 ${g.valor}・政 ${g.pol}${g.lord ? '・相手の当主' : ''}</span></div>
+        ${done ? `<span class="cap-result ${done.kind}">${done.text}</span>` : `
+          <button type="button" class="ghost small" data-release="${id}">解放</button>
+          <button type="button" class="primary small" data-recruit="${id}">家臣に誘う</button>`}
+      </li>`;
+    }).join('');
+    const remaining = ids.filter((id) => !results[id]);
+    $('capture-release-all').classList.toggle('hidden', remaining.length === 0);
+    $('capture-close').classList.toggle('hidden', remaining.length > 0);
+    list.querySelectorAll('[data-recruit]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.recruit;
+      const r = E.recruitCaptured(game, id, game.player);
+      if (!r.joined) E.releaseCaptured(game, id);
+      results[id] = { kind: r.joined ? 'good' : 'bad', text: r.joined ? '家臣になった' : '断って去った' };
+      after();
+      render();
+    }));
+    list.querySelectorAll('[data-release]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.release;
+      E.releaseCaptured(game, id);
+      results[id] = { kind: '', text: '解放した' };
+      after();
+      render();
+    }));
   };
-  $('capture-release').onclick = () => {
-    dlg.close();
-    const r = E.releaseCaptured(game, id);
-    toast(r.text);
+  $('capture-release-all').onclick = () => {
+    for (const id of ids) {
+      if (results[id]) continue;
+      E.releaseCaptured(game, id);
+      results[id] = { kind: '', text: '解放した' };
+    }
     after();
-    promptCaptures(rest);
+    render();
   };
+  $('capture-close').onclick = () => dlg.close();
+  render();
   openDialog(dlg);
 }
 
@@ -496,9 +598,9 @@ function promptCaptures(ids) {
 
 function tryEndMonth() {
   if (game.ended) return;
-  const left = E.generalsOf(game, game.player).filter((g) => !g.acted);
-  if (left.length) {
-    $('confirm-end-text').textContent = `まだ命令していない武将が ${left.length} 人います（${left.slice(0, 4).map((g) => g.name).join('、')}${left.length > 4 ? ' ほか' : ''}）。このまま月を終えますか？`;
+  const left = commandsAvailable();
+  if (left) {
+    $('confirm-end-text').textContent = `まだ使っていない命令が ${left} 回あります。このまま月を終えますか？`;
     $('confirm-end-ok').onclick = () => { $('dlg-confirm-end').close(); endMonth(); };
     $('confirm-end-cancel').onclick = () => $('dlg-confirm-end').close();
     openDialog($('dlg-confirm-end'));
@@ -603,12 +705,18 @@ function init() {
   $('btn-help').addEventListener('click', () => openDialog($('dlg-help')));
   $('help-close').addEventListener('click', () => $('dlg-help').close());
   $('btn-ranking').addEventListener('click', openRanking);
+  $('btn-roster').addEventListener('click', openRoster);
   $('btn-menu').addEventListener('click', () => openDialog($('dlg-menu')));
   $('menu-close').addEventListener('click', () => $('dlg-menu').close());
   $('menu-new').addEventListener('click', () => { $('dlg-menu').close(); showStart(); });
   $('map-wrap').addEventListener('click', (e) => {
     if (view.mode && !e.target.closest('.node') && !e.target.closest('.map-zoom')) { cancelMode(); renderAll(); }
   });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && view.mode && !document.querySelector('dialog[open]')) { cancelMode(); renderAll(); }
+  });
+  // 「大名を選ぶ」は Esc で閉じない
+  $('dlg-start').addEventListener('cancel', (e) => { if (!game) e.preventDefault(); });
   // 地図の拡大縮小（狭い画面では最初から少し拡大しておく）
   let zoom = window.matchMedia('(max-width: 900px)').matches ? 1.8 : 1;
   const applyZoom = () => {
@@ -619,11 +727,6 @@ function init() {
   $('zoom-in').addEventListener('click', () => { zoom = Math.min(3, zoom + 0.4); applyZoom(); centerMap(); });
   $('zoom-out').addEventListener('click', () => { zoom = Math.max(1, zoom - 0.4); applyZoom(); centerMap(); });
   applyZoom();
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && view.mode && !document.querySelector('dialog[open]')) { cancelMode(); renderAll(); }
-  });
-  // 「大名を選ぶ」は Esc で閉じない
-  $('dlg-start').addEventListener('cancel', (e) => { if (!game) e.preventDefault(); });
 
   showStart();
 

@@ -11,10 +11,10 @@
  */
 
 import {
-  COST, DAIMYOS, GENERALS, LIMIT, LINKS, PROVINCES, START_MONTH, START_YEAR,
+  COST, DAIMYOS, GENERALS, LIMIT, LINKS, LORD_LEAD, PROVINCES, RANKS, START_MONTH, START_YEAR, initialRank,
 } from './data.js';
 
-export { COST, LIMIT };
+export { COST, LIMIT, RANKS };
 
 // ------------------------------------------------------------------ 乱数
 
@@ -67,6 +67,7 @@ export function createGame({ player, seed = Date.now() % 2147483647 } = {}) {
       id: p.id, name: p.name, owner: p.owner,
       agri: p.agri, comm: p.comm, defense: p.defense, soldiers: p.soldiers,
       loyalty: p.owner ? 65 : 55, training: 50,
+      commands: 0, // 今月この国で使った命令の数
     };
   }
 
@@ -86,7 +87,9 @@ export function createGame({ player, seed = Date.now() % 2147483647 } = {}) {
 
   const generals = {};
   for (const g of GENERALS) {
-    generals[g.id] = { ...g, acted: false, status: 'active' };
+    // 登場年が先の武将は「未登場」。大名のいない武将は「在野」
+    const status = g.appear && g.appear > START_YEAR ? 'unborn' : g.daimyo ? 'active' : 'ronin';
+    generals[g.id] = { ...g, homeDaimyo: g.daimyo, acted: false, status, merit: 0 };
   }
 
   return {
@@ -104,6 +107,12 @@ export const provincesOf = (state, daimyoId) => Object.values(state.provinces).f
 export const generalsOf = (state, daimyoId) => Object.values(state.generals).filter((g) => g.daimyo === daimyoId && g.status === 'active');
 export const generalsIn = (state, provinceId) => Object.values(state.generals).filter((g) => g.province === provinceId && g.status === 'active');
 export const lordOf = (state, daimyoId) => generalsOf(state, daimyoId).find((g) => g.lord) || null;
+export const roninIn = (state, provinceId) => Object.values(state.generals).filter((g) => g.province === provinceId && g.status === 'ronin');
+export const rankName = (g) => (g.lord ? '当主' : RANKS[g.rank]?.name ?? '足軽頭');
+/** 率いて出陣・移動できる兵の上限 */
+export const leadCap = (g) => (g.lord ? LORD_LEAD : RANKS[g.rank]?.lead ?? RANKS[0].lead);
+/** その国で今月あと何回命令できるか */
+export const commandsLeft = (state, provinceId) => Math.max(0, LIMIT.commandsPerProvince - (state.provinces[provinceId]?.commands ?? 0));
 export const aliveDaimyos = (state) => Object.values(state.daimyos).filter((d) => d.alive);
 
 export function isAllied(state, a, b) {
@@ -170,6 +179,7 @@ export const COMMANDS = [
   { type: 'charity', label: '施し', icon: '🍙', desc: '米を配って民忠を上げる。一揆を防ぐ' },
   { type: 'move', label: '移動', icon: '🐎', desc: '隣の自国へ武将と兵を動かす' },
   { type: 'march', label: '出陣', icon: '🔥', desc: '隣の他国へ攻め込む' },
+  { type: 'explore', label: '探索', icon: '🔍', desc: '国の中を探して在野の武将を見つけ、家臣に誘う' },
   { type: 'goodwill', label: '親善', icon: '🎁', desc: '他の大名に贈り物をして友好を上げる' },
   { type: 'alliance', label: '同盟', icon: '🤝', desc: '友好の高い大名と同盟を結ぶ。互いに攻められなくなる' },
 ];
@@ -183,10 +193,13 @@ export function commandList(state, generalId) {
   const d = state.daimyos[g.daimyo];
   const p = state.provinces[g.province];
   const out = [];
+  const noBudget = commandsLeft(state, p.id) <= 0;
   const add = (type, ok, reason = '', extra = {}) => {
     const def = COMMANDS.find((c) => c.type === type);
-    out.push({ ...def, enabled: ok && !g.acted, reason: g.acted ? '今月はもう行動した' : (ok ? '' : reason), ...extra });
+    const blocked = g.acted ? '今月はもう行動した' : noBudget ? `この国で出せる命令は月 ${LIMIT.commandsPerProvince} 回まで` : '';
+    out.push({ ...def, enabled: ok && !blocked, reason: blocked || (ok ? '' : reason), ...extra });
   };
+  const cap = Math.min(p.soldiers, leadCap(g));
   const nbOwn = adjacent(p.id).filter((id) => state.provinces[id].owner === g.daimyo);
   const nbEnemy = adjacent(p.id).filter((id) => state.provinces[id].owner !== g.daimyo && !isAllied(state, g.daimyo, state.provinces[id].owner));
   const recruits = Math.min(recruitAmount(g), LIMIT.soldiersPerProvince - p.soldiers);
@@ -200,10 +213,11 @@ export function commandList(state, generalId) {
     { cost: `金${recruitCost}`, effect: `兵 +${recruits}` });
   add('train', p.training < LIMIT.training, '訓練度はもう最大', { cost: 'なし', effect: `訓練 +${4 + Math.floor(g.lead / 10)}` });
   add('charity', d.rice >= COST.charity && p.loyalty < LIMIT.loyalty, d.rice < COST.charity ? `米が足りない（${COST.charity} 必要）` : '民忠はもう最大', { cost: `米${COST.charity}`, effect: `民忠 +${5 + Math.floor(g.pol / 10)}` });
-  add('move', nbOwn.length > 0, '隣に自分の国がない', { cost: 'なし', effect: '武将と兵を移す', targets: nbOwn });
+  add('move', nbOwn.length > 0, '隣に自分の国がない', { cost: 'なし', effect: `兵を最大 ${cap} 連れて移る`, targets: nbOwn, maxSoldiers: cap });
   add('march', nbEnemy.length > 0 && p.soldiers >= 100 && d.rice >= COST.marchRicePer100,
     nbEnemy.length === 0 ? '隣に攻められる国がない' : p.soldiers < 100 ? '兵が足りない' : '米が足りない',
-    { cost: `米 100人ごとに${COST.marchRicePer100}`, effect: '隣国を攻める', targets: nbEnemy });
+    { cost: `米 100人ごとに${COST.marchRicePer100}`, effect: `最大 ${cap} の兵で攻める`, targets: nbEnemy, maxSoldiers: cap });
+  add('explore', d.gold >= COST.explore, `金が足りない（${COST.explore} 必要）`, { cost: `金${COST.explore}`, effect: roninIn(state, p.id).length ? '在野の武将がいそうだ' : '手がかりはなさそうだ' });
   const others = aliveDaimyos(state).filter((o) => o.id !== g.daimyo);
   add('goodwill', d.gold >= COST.goodwill && others.length > 0, `金が足りない（${COST.goodwill} 必要）`, { cost: `金${COST.goodwill}`, effect: `友好 +${5 + Math.floor(g.pol / 10)}` });
   const allianceTargets = others.filter((o) => d.friendship[o.id] >= 60 && !isAllied(state, g.daimyo, o.id));
@@ -225,8 +239,11 @@ export function execute(state, cmd) {
   if (g.acted) return { ok: false, text: `${g.name}は今月はもう行動した` };
   const d = state.daimyos[g.daimyo];
   const p = state.provinces[g.province];
+  if (commandsLeft(state, p.id) <= 0) return { ok: false, text: `${p.name}で出せる命令は月 ${LIMIT.commandsPerProvince} 回まで` };
   const who = [g.daimyo];
   const fail = (text) => ({ ok: false, text });
+  /** 行動を確定する：武将は行動済み、国の命令を 1 つ使い、功績を加える */
+  const done = (merit) => { g.acted = true; p.commands++; addMerit(state, g, merit); };
 
   switch (cmd.type) {
     case 'develop': {
@@ -235,7 +252,7 @@ export function execute(state, cmd) {
       d.gold -= COST.develop;
       const gain = Math.min(developGain(g), LIMIT.agri - p.agri);
       p.agri += gain;
-      g.acted = true;
+      done(2);
       return { ok: true, text: pushLog(state, `${g.name}が${p.name}を開墾した（農業 +${gain}）`, 'info', { daimyos: who }).text };
     }
     case 'commerce': {
@@ -244,7 +261,7 @@ export function execute(state, cmd) {
       d.gold -= COST.develop;
       const gain = Math.min(developGain(g), LIMIT.comm - p.comm);
       p.comm += gain;
-      g.acted = true;
+      done(2);
       return { ok: true, text: pushLog(state, `${g.name}が${p.name}の商業を盛んにした（商業 +${gain}）`, 'info', { daimyos: who }).text };
     }
     case 'fortify': {
@@ -253,7 +270,7 @@ export function execute(state, cmd) {
       d.gold -= COST.fortify;
       const gain = Math.min(developGain(g), LIMIT.defense - p.defense);
       p.defense += gain;
-      g.acted = true;
+      done(2);
       return { ok: true, text: pushLog(state, `${g.name}が${p.name}の城を固めた（防御 +${gain}）`, 'info', { daimyos: who }).text };
     }
     case 'recruit': {
@@ -265,14 +282,14 @@ export function execute(state, cmd) {
       d.gold -= cost;
       p.soldiers += n;
       p.loyalty = clamp(p.loyalty - 4, 0, LIMIT.loyalty);
-      g.acted = true;
+      done(2);
       return { ok: true, text: pushLog(state, `${g.name}が${p.name}で兵を集めた（兵 +${n}）`, 'info', { daimyos: who }).text };
     }
     case 'train': {
       if (p.training >= LIMIT.training) return fail('訓練度はもう最大');
       const gain = Math.min(4 + Math.floor(g.lead / 10), LIMIT.training - p.training);
       p.training += gain;
-      g.acted = true;
+      done(1);
       return { ok: true, text: pushLog(state, `${g.name}が${p.name}の兵を訓練した（訓練 +${gain}）`, 'info', { daimyos: who }).text };
     }
     case 'charity': {
@@ -281,7 +298,7 @@ export function execute(state, cmd) {
       d.rice -= COST.charity;
       const gain = Math.min(5 + Math.floor(g.pol / 10), LIMIT.loyalty - p.loyalty);
       p.loyalty += gain;
-      g.acted = true;
+      done(2);
       return { ok: true, text: pushLog(state, `${g.name}が${p.name}の民に米を配った（民忠 +${gain}）`, 'info', { daimyos: who }).text };
     }
     case 'move': {
@@ -289,13 +306,14 @@ export function execute(state, cmd) {
       if (!t || !adjacent(p.id).includes(t.id)) return fail('隣の国にしか移動できない');
       if (t.owner !== g.daimyo) return fail('自分の国にしか移動できない');
       const n = clamp(Math.floor(cmd.soldiers ?? 0), 0, p.soldiers);
+      if (n > leadCap(g)) return fail(`${rankName(g)}の${g.name}が率いられる兵は ${leadCap(g)} まで`);
       if (t.soldiers + n > LIMIT.soldiersPerProvince) return fail('移動先の兵が上限を超える');
       p.soldiers -= n;
       t.soldiers += n;
       // 訓練度は兵数で加重平均
       if (n > 0) t.training = Math.round((t.training * (t.soldiers - n) + p.training * n) / t.soldiers);
       g.province = t.id;
-      g.acted = true;
+      done(0);
       return { ok: true, text: pushLog(state, `${g.name}が兵${n}を率いて${p.name}から${t.name}へ移った`, 'info', { daimyos: who }).text };
     }
     case 'march': {
@@ -305,11 +323,12 @@ export function execute(state, cmd) {
       if (isAllied(state, g.daimyo, t.owner)) return fail('同盟中の相手は攻められない');
       const n = clamp(Math.floor(cmd.soldiers ?? 0), 0, p.soldiers);
       if (n < 100) return fail('100 人以上で出陣する');
+      if (n > leadCap(g)) return fail(`${rankName(g)}の${g.name}が率いられる兵は ${leadCap(g)} まで`);
       const rice = Math.ceil(n / 100) * COST.marchRicePer100;
       if (d.rice < rice) return fail(`兵糧の米が足りない（${rice} 必要）`);
       d.rice -= rice;
       p.soldiers -= n;
-      g.acted = true;
+      done(0);
       const battle = startBattle(state, g, p, t, n);
       return { ok: true, text: battle.log[0].text, battle };
     }
@@ -321,7 +340,7 @@ export function execute(state, cmd) {
       const gain = 5 + Math.floor(g.pol / 10);
       d.friendship[o.id] = clamp(d.friendship[o.id] + gain, 0, 100);
       o.friendship[g.daimyo] = clamp(o.friendship[g.daimyo] + Math.ceil(gain / 2), 0, 100);
-      g.acted = true;
+      done(2);
       return { ok: true, text: pushLog(state, `${g.name}が${o.name}に贈り物をした（友好 ${d.friendship[o.id]}）`, 'info', { daimyos: who }).text };
     }
     case 'alliance': {
@@ -331,9 +350,10 @@ export function execute(state, cmd) {
       if (d.friendship[o.id] < 60) return fail('友好が 60 以上必要');
       if (d.gold < COST.alliance) return fail('金が足りない');
       d.gold -= COST.alliance;
-      g.acted = true;
+      done(1);
       const chance = (d.friendship[o.id] - 30) / 100 + g.pol / 500;
       if (rand(state) < chance) {
+        addMerit(state, g, 5);
         const until = state.turn + LIMIT.allianceMonths;
         d.alliance[o.id] = until;
         o.alliance[g.daimyo] = until;
@@ -342,8 +362,48 @@ export function execute(state, cmd) {
       d.friendship[o.id] = clamp(d.friendship[o.id] - 5, 0, 100);
       return { ok: true, text: pushLog(state, `${o.name}は${g.name}の同盟の申し出を断った`, 'bad', { daimyos: who }).text, success: false };
     }
+    case 'explore': {
+      if (d.gold < COST.explore) return fail('金が足りない');
+      d.gold -= COST.explore;
+      const found = roninIn(state, p.id).filter((r) => r.refused !== state.turn);
+      if (!found.length) {
+        done(1);
+        return { ok: true, text: pushLog(state, `${g.name}が${p.name}を探索したが、在野の武将は見つからなかった`, 'info', { daimyos: who }).text, found: null };
+      }
+      const r = found[Math.floor(rand(state) * found.length)];
+      const lord = lordOf(state, g.daimyo);
+      const charm = lord ? (lord.lead + lord.pol) / 2 : 50;
+      const strength = r.lead + r.valor + r.pol;
+      const chance = clamp(0.55 + (charm - 50) / 200 + g.pol / 400 - (strength - 150) / 600, 0.15, 0.9);
+      if (rand(state) < chance) {
+        r.status = 'active';
+        r.daimyo = g.daimyo;
+        r.province = p.id;
+        r.acted = true;
+        r.lord = false;
+        r.rank = initialRank(r.lead, r.valor, r.pol);
+        delete r.refused;
+        done(5);
+        return { ok: true, text: pushLog(state, `${g.name}が${p.name}で${r.name}を見つけ、家臣に迎えた！`, 'good', { daimyos: who }).text, found: r.id, joined: true };
+      }
+      r.refused = state.turn;
+      done(2);
+      return { ok: true, text: pushLog(state, `${g.name}が${p.name}で${r.name}を見つけたが、仕官を断られた`, 'bad', { daimyos: who }).text, found: r.id, joined: false };
+    }
     default:
       return fail('知らないコマンド');
+  }
+}
+
+// ------------------------------------------------------------------ 功績と身分
+
+/** 功績を加え、足りていれば昇進させる */
+function addMerit(state, g, amount) {
+  if (!amount) return;
+  g.merit = (g.merit || 0) + amount;
+  while (!g.lord && g.rank < RANKS.length - 1 && g.merit >= RANKS[g.rank + 1].merit) {
+    g.rank++;
+    pushLog(state, `${g.name}が${RANKS[g.rank].name}に昇進した（率いられる兵 ${RANKS[g.rank].lead}）`, 'good', { daimyos: [g.daimyo] });
   }
 }
 
@@ -431,6 +491,7 @@ function finishBattle(state, b, result) {
     const text = `${attName}の${ag.name}が${t.name}を攻め落とした！`;
     b.log.push({ text, result });
     pushLog(state, text, 'battle', { daimyos: involved });
+    addMerit(state, ag, 15);
     for (const id of b.fled) pushLog(state, `${state.generals[id].name}は${provinceName(state.generals[id].province)}へ逃げのびた`, 'info', { daimyos: [loser] });
     for (const id of b.captured) pushLog(state, `${state.generals[id].name}を捕らえた`, 'battle', { daimyos: involved });
     if (loser) checkElimination(state, loser);
@@ -446,6 +507,9 @@ function finishBattle(state, b, result) {
         : `${ag.name}隊は${t.name}を落とせず、兵${back}を連れて${from.name}へ引き上げた`;
     b.log.push({ text, result });
     pushLog(state, text, 'battle', { daimyos: involved });
+    addMerit(state, ag, result === 'lose' ? 1 : 3);
+    const dg = bestGeneral(b.defenders.map((id) => state.generals[id]));
+    if (dg) addMerit(state, dg, 8);
   }
 }
 
@@ -490,9 +554,11 @@ export function releaseCaptured(state, generalId) {
     pushLog(state, text, 'info', { daimyos: [g.daimyo, state.player] });
     return { ok: true, text };
   }
-  g.status = 'gone';
-  const text = `${g.name}は解放され、野に下った`;
-  pushLog(state, text, 'info');
+  g.status = 'ronin';
+  g.daimyo = null;
+  g.lord = false;
+  const text = `${g.name}は解放され、${provinceName(g.province)}で野に下った`;
+  pushLog(state, text, 'info', { daimyos: [state.player] });
   return { ok: true, text };
 }
 
@@ -519,7 +585,7 @@ function checkElimination(state, daimyoId) {
   }
   d.alive = false;
   for (const p of ps) p.owner = null; // 武将がいない国は国人衆が治める
-  for (const g of gs) { g.status = 'gone'; }
+  for (const g of gs) { g.status = 'ronin'; g.daimyo = null; g.lord = false; } // 家臣は野に下る
   pushLog(state, `${d.name}は滅亡した`, 'battle', { daimyos: [daimyoId, state.player] });
 }
 
@@ -549,6 +615,8 @@ export function advanceMonth(state) {
   const me = state.player;
 
   for (const g of Object.values(state.generals)) g.acted = false;
+  for (const p of Object.values(state.provinces)) p.commands = 0;
+  appearGenerals(state);
 
   // 空白地の国人衆はゆっくり兵を戻す
   for (const p of Object.values(state.provinces)) {
@@ -621,6 +689,30 @@ export function advanceMonth(state) {
     }
   }
   return events;
+}
+
+/** 登場年を迎えた武将を現す。家が残っていれば仕官し、なければ在野になる */
+function appearGenerals(state) {
+  for (const g of Object.values(state.generals)) {
+    if (g.status !== 'unborn' || state.year < g.appear) continue;
+    const home = g.homeDaimyo && state.daimyos[g.homeDaimyo]?.alive ? state.daimyos[g.homeDaimyo] : null;
+    if (home) {
+      const ps = provincesOf(state, home.id);
+      const cap = ps.find((p) => p.id === home.capital) || ps[0];
+      g.status = 'active';
+      g.daimyo = home.id;
+      g.province = cap.id;
+      g.rank = initialRank(g.lead, g.valor, g.pol);
+      pushLog(state, `${g.name}が元服し、${home.name}に仕えた`, 'good', { daimyos: [home.id] });
+    } else {
+      g.status = 'ronin';
+      g.daimyo = null;
+      g.lord = false;
+      if (state.provinces[g.province].owner === state.player) {
+        pushLog(state, `${provinceName(g.province)}に${g.name}という者が現れたらしい`, 'info', { daimyos: [state.player] });
+      }
+    }
+  }
 }
 
 // ------------------------------------------------------------------ 保存

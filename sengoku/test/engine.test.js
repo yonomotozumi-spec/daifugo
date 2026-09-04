@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 
 import { DAIMYOS, GENERALS, LINKS, PROVINCES } from '../src/data.js';
 import {
-  COST, LIMIT, adjacent, advanceMonth, aliveDaimyos, attackPower, battleRetreat, battleRound,
-  commandList, createGame, daimyoSummary, defensePower, deserialize, execute, generalsIn,
-  generalsOf, isAllied, lordOf, provincesOf, recruitCaptured, releaseCaptured, serialize,
+  COST, LIMIT, RANKS, adjacent, advanceMonth, aliveDaimyos, attackPower, battleRetreat, battleRound,
+  commandList, commandsLeft, createGame, daimyoSummary, defensePower, deserialize, execute, generalsIn,
+  generalsOf, isAllied, leadCap, lordOf, provincesOf, rankName, recruitCaptured, releaseCaptured, roninIn,
+  serialize,
 } from '../src/engine.js';
 import { runAi } from '../src/ai.js';
 
@@ -29,8 +30,12 @@ test('国・大名・武将のデータに矛盾がない', () => {
     assert.equal(GENERALS.filter((g) => g.daimyo === d.id && g.lord).length, 1, `${d.name} の当主は 1 人`);
   }
   for (const g of GENERALS) {
-    assert.equal(PROVINCES.find((p) => p.id === g.province)?.owner, g.daimyo, `${g.name} が自分の家の国にいない`);
+    assert.ok(PROVINCES.some((p) => p.id === g.province), `${g.name} のいる国が不明`);
+    if (g.daimyo) assert.equal(PROVINCES.find((p) => p.id === g.province)?.owner, g.daimyo, `${g.name} が自分の家の国にいない`);
+    if (g.appear) assert.ok(g.appear > 1500 && g.appear < 1650, `${g.name} の登場年がおかしい`);
   }
+  assert.ok(GENERALS.length >= 1000, `武将は 1000 人以上（今 ${GENERALS.length} 人）`);
+  assert.equal(new Set(GENERALS.map((g) => g.name)).size, GENERALS.length, '名前が重複している');
 });
 
 test('地図はひとつながりになっている', () => {
@@ -161,6 +166,7 @@ test('出陣は兵糧を使い、合戦を 1 合戦ずつ進められる', () =>
   s.provinces.owari.soldiers = 12000;
   s.provinces.owari.training = 90;
   const rice = s.daimyos.oda.rice;
+  const defenders = generalsIn(s, 'mikawa').length;
   const r = execute(s, { type: 'march', general: nobunaga.id, target: 'mikawa', soldiers: 10000 });
   assert.ok(r.ok, r.text);
   assert.ok(r.battle);
@@ -181,7 +187,7 @@ test('出陣は兵糧を使い、合戦を 1 合戦ずつ進められる', () =>
   assert.equal(s.provinces.mikawa.loyalty, 40);
   // 三河にいた松平の武将は、逃げ場（隣の自国）がないので捕虜になる
   for (const id of b.captured) assert.equal(s.generals[id].status, 'captured');
-  assert.equal(b.captured.length + b.fled.length, 4);
+  assert.equal(b.captured.length + b.fled.length, defenders);
   assert.equal(b.fled.length, 0);
   assert.equal(s.daimyos.matsudaira.alive, false, '一国しかない松平は滅亡する');
 });
@@ -260,7 +266,8 @@ test('捕らえた武将は登用か解放できる', () => {
   const first = b.captured[0];
   const rel = releaseCaptured(s, first);
   assert.ok(rel.ok);
-  assert.equal(s.generals[first].status, 'gone');
+  assert.equal(s.generals[first].status, 'ronin', '帰る家がないので在野になる');
+  assert.equal(s.generals[first].province, 'mikawa');
   // 登用：成功するまで乱数を回す
   const second = b.captured[1];
   let joined = false;
@@ -352,11 +359,18 @@ test('城の防御が高いほど守りの戦力が上がる', () => {
 
 // ------------------------------------------------------------------ CPU
 
-test('CPU は毎月なにかしら行動し、プレイヤーの武将は動かさない', () => {
+test('CPU は国ごとの命令を使い切り、プレイヤーの武将は動かさない', () => {
   const s = game('oda', 7);
+  const before = provincesOf(s, 'takeda').map((p) => p.id);
   runAi(s);
-  assert.ok(generalsOf(s, 'takeda').every((g) => g.acted));
+  // 月の初めから持っていた国では命令を使い切る（その月に取った国や逃げ込んだ先は除く）
+  for (const id of before) {
+    if (s.provinces[id].owner !== 'takeda') continue;
+    assert.equal(commandsLeft(s, id), 0, `${s.provinces[id].name} の命令が余っている`);
+  }
+  assert.ok(generalsOf(s, 'takeda').some((g) => g.acted));
   assert.ok(generalsOf(s, 'oda').every((g) => !g.acted));
+  assert.equal(commandsLeft(s, 'owari'), LIMIT.commandsPerProvince);
 });
 
 test('CPU 同士で 10 年戦わせると国の取り合いが起きる', () => {
@@ -374,6 +388,99 @@ test('CPU 同士で 10 年戦わせると国の取り合いが起きる', () => 
     assert.ok(s.daimyos[g.daimyo].alive);
   }
   for (const p of Object.values(s.provinces)) assert.ok(p.soldiers >= 0);
+});
+
+// ------------------------------------------------------------------ 命令の回数・身分・探索・登場
+
+test('ひとつの国で出せる命令は月 3 回まで', () => {
+  const s = game('oda');
+  const gs = generalsOf(s, 'oda').filter((g) => g.province === 'owari');
+  assert.ok(gs.length >= 4);
+  assert.equal(commandsLeft(s, 'owari'), LIMIT.commandsPerProvince);
+  for (let i = 0; i < 3; i++) assert.ok(execute(s, { type: 'train', general: gs[i].id }).ok);
+  assert.equal(commandsLeft(s, 'owari'), 0);
+  const r = execute(s, { type: 'train', general: gs[3].id });
+  assert.equal(r.ok, false);
+  assert.match(r.text, /月 3 回/);
+  assert.ok(commandList(s, gs[3].id).every((c) => !c.enabled));
+  advanceMonth(s);
+  assert.equal(commandsLeft(s, 'owari'), LIMIT.commandsPerProvince);
+});
+
+test('身分によって率いられる兵の上限が違い、超えると出陣できない', () => {
+  const s = game('oda');
+  const nobunaga = lord(s, 'oda');
+  assert.equal(rankName(nobunaga), '当主');
+  assert.equal(leadCap(nobunaga), 12000);
+  const low = generalsOf(s, 'oda').find((g) => g.rank === 0);
+  assert.ok(low, '足軽頭がいる');
+  assert.equal(leadCap(low), RANKS[0].lead);
+  s.provinces.owari.soldiers = 10000;
+  const r = execute(s, { type: 'march', general: low.id, target: 'mikawa', soldiers: 5000 });
+  assert.equal(r.ok, false);
+  assert.match(r.text, /率いられる兵/);
+  assert.ok(execute(s, { type: 'march', general: low.id, target: 'mikawa', soldiers: RANKS[0].lead }).ok);
+});
+
+test('功績がたまると昇進する', () => {
+  const s = game('oda');
+  const low = generalsOf(s, 'oda').find((g) => g.rank === 0);
+  low.merit = RANKS[1].merit - 1;
+  execute(s, { type: 'train', general: low.id });
+  assert.equal(low.rank, 1);
+  assert.equal(rankName(low), '侍大将');
+  assert.ok(s.log.some((l) => l.text.includes(`${low.name}が侍大将に昇進`)));
+});
+
+test('探索で在野の武将を見つけて家臣にできる', () => {
+  const s = game('oda', 2);
+  const ronin = roninIn(s, 'owari');
+  assert.ok(ronin.length > 0, '尾張に在野がいる');
+  const before = generalsOf(s, 'oda').length;
+  let joined = false;
+  for (let i = 0; i < 40 && !joined; i++) {
+    const g = generalsOf(s, 'oda').find((x) => !x.acted && x.province === 'owari');
+    const r = execute(s, { type: 'explore', general: g.id });
+    assert.ok(r.ok, r.text);
+    joined = Boolean(r.joined);
+    advanceMonth(s);
+  }
+  assert.ok(joined);
+  assert.equal(generalsOf(s, 'oda').length, before + 1);
+  assert.ok(s.log.some((l) => l.text.includes('家臣に迎えた')));
+});
+
+test('登場年を迎えた武将は家に仕官し、家が滅んでいれば在野になる', () => {
+  const s = game('oda', 1);
+  const masamune = Object.values(s.generals).find((g) => g.name === '伊達政宗');
+  assert.equal(masamune.status, 'unborn');
+  s.year = 1580; s.month = 12;
+  advanceMonth(s);
+  assert.equal(s.year, 1581);
+  assert.equal(masamune.status, 'active');
+  assert.equal(masamune.daimyo, 'date');
+  assert.equal(masamune.province, 'mutsu');
+  assert.ok(s.log.some((l) => l.text.includes('伊達政宗が元服')));
+
+  const s2 = game('oda', 1);
+  s2.daimyos.date.alive = false;
+  const m2 = Object.values(s2.generals).find((g) => g.name === '伊達政宗');
+  s2.year = 1581; s2.month = 1;
+  advanceMonth(s2);
+  assert.equal(m2.status, 'ronin');
+  assert.equal(m2.daimyo, null);
+});
+
+test('家が滅ぶと家臣は在野になる', () => {
+  const s = game('oda', 3);
+  s.provinces.owari.soldiers = 15000;
+  const before = roninIn(s, 'mikawa').length;
+  const b = execute(s, { type: 'march', general: lord(s, 'oda').id, target: 'mikawa', soldiers: 12000 }).battle;
+  while (!b.done) battleRound(s, b);
+  assert.equal(s.daimyos.matsudaira.alive, false);
+  for (const id of b.captured) releaseCaptured(s, id);
+  assert.ok(roninIn(s, 'mikawa').length > before);
+  assert.ok(Object.values(s.generals).every((g) => g.status !== 'gone'));
 });
 
 test('相手の家をすべて滅ぼすと天下統一になる', () => {

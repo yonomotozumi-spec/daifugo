@@ -50,11 +50,18 @@ await page.waitForFunction((a) => window.sengoku.game.provinces.owari.agri > a, 
 assert(await game(() => window.sengoku.game.generals.g0.acted), '信長が行動済みになる');
 await shot('03-develop');
 
-// 次の武将（柴田勝家）の命令欄が自動で開く → 徴兵
+// 次の武将の命令欄が自動で開く → 徴兵
 await page.waitForSelector('.general.open [data-cmd="recruit"]');
 const soldiersBefore = await game(() => window.sengoku.game.provinces.owari.soldiers);
 await page.click('.general.open [data-cmd="recruit"]');
 await page.waitForFunction((n) => window.sengoku.game.provinces.owari.soldiers > n, soldiersBefore);
+assert(await page.textContent('#budget') === '命令 残り 1 / 3', `命令の残りが表示される（${await page.textContent('#budget')}）`);
+
+// 武将の名前を押すと顔絵つきの詳細が出る
+await page.click('.general .g-name');
+await page.waitForSelector('#dlg-general[open] .portrait');
+await shot('03b-general');
+await page.click('#gd-close');
 
 // ---------------------------------------------------------------- 出陣
 await page.evaluate(() => { window.sengoku.game.provinces.owari.soldiers = 12000; window.sengoku.render(); });
@@ -86,19 +93,27 @@ await page.click('#battle-close');
 const mikawaOwner = await game(() => window.sengoku.game.provinces.mikawa.owner);
 assert(mikawaOwner === 'oda', `三河を落とせる（owner=${mikawaOwner}）`);
 
-// 捕らえた武将が出たら解放する
-for (let i = 0; i < 5; i++) {
-  const open = await page.isVisible('#dlg-capture[open]');
-  if (!open) break;
-  if (i === 0) await shot('08-capture');
-  await page.click('#capture-release');
+// 捕らえた武将が出たら、ひとり誘ってから残りを解放する
+if (await page.isVisible('#dlg-capture[open]')) {
+  await shot('08-capture');
+  await page.click('#capture-list [data-recruit]');
   await page.waitForTimeout(80);
+  await page.click('#capture-release-all');
+  await page.waitForSelector('#capture-close:not(.hidden)');
+  await page.click('#capture-close');
 }
+assert(await game(() => Object.values(window.sengoku.game.generals).every((g) => g.status !== 'captured')), '捕虜が残っていない');
+
+// 家中の武将一覧
+await page.click('#btn-roster');
+await page.waitForSelector('#dlg-roster[open] .portrait');
+await shot('08b-roster');
+await page.click('#roster-close');
 
 // ---------------------------------------------------------------- 月を終える
 await page.click('#btn-end');
-await page.waitForSelector('#dlg-confirm-end[open]'); // まだ動いていない武将がいる
-await page.click('#confirm-end-ok');
+// 命令が余っていれば確認が出る
+if (await page.isVisible('#dlg-confirm-end[open]')) await page.click('#confirm-end-ok');
 await page.waitForSelector('#dlg-report[open]');
 await shot('09-report');
 await page.click('#report-close');

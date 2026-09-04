@@ -22,6 +22,7 @@
   </div>
 
   <div class="topbar-actions">
+    <button type="button" class="ghost" id="btn-roster" aria-haspopup="dialog">武将</button>
     <button type="button" class="ghost" id="btn-ranking" aria-haspopup="dialog">勢力</button>
     <button type="button" class="ghost" id="btn-help" aria-haspopup="dialog">遊びかた</button>
     <button type="button" class="ghost" id="btn-menu" aria-haspopup="dialog">メニュー</button>
@@ -108,13 +109,44 @@
 </dialog>
 
 <!-- 捕らえた武将 -->
-<dialog id="dlg-capture">
+<dialog id="dlg-capture" class="wide">
   <h2>武将を捕らえた</h2>
-  <p id="capture-text"></p>
-  <p class="hint" id="capture-note"></p>
+  <p class="hint">家臣に誘うと、断られることもあります。断られた武将はもとの家へ帰るか、野に下ります。相手の当主はめったに降りません。</p>
+  <ul class="capture-list" id="capture-list"></ul>
   <menu>
-    <button type="button" class="ghost" id="capture-release">解放する</button>
-    <button type="button" class="primary" id="capture-recruit">家臣に誘う</button>
+    <button type="button" class="ghost" id="capture-release-all">残りをすべて解放</button>
+    <button type="button" class="primary hidden" id="capture-close">閉じる</button>
+  </menu>
+</dialog>
+
+<!-- 武将の詳細 -->
+<dialog id="dlg-general">
+  <div class="gd-head">
+    <div class="gd-portrait" id="gd-portrait"></div>
+    <div>
+      <h2 id="gd-name">武将</h2>
+      <p class="gd-sub" id="gd-sub"></p>
+    </div>
+  </div>
+  <div class="stats" id="gd-stats"></div>
+  <p class="hint" id="gd-note"></p>
+  <menu>
+    <button type="button" class="primary" id="gd-close">閉じる</button>
+  </menu>
+</dialog>
+
+<!-- 家中の武将一覧 -->
+<dialog id="dlg-roster" class="wide">
+  <h2>家中の武将 <span class="count" id="roster-count"></span></h2>
+  <p class="hint">身分が高いほど多くの兵を率いて出陣できます。功績（内政や合戦の働き）がたまると昇進します。名前を押すと詳しく見られます。</p>
+  <div class="table-wrap roster-wrap">
+    <table class="ranking roster" id="roster-table">
+      <thead><tr><th></th><th>名前</th><th>身分</th><th>統率</th><th>武勇</th><th>政治</th><th>功績</th><th>いる国</th><th>今月</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <menu>
+    <button type="button" class="primary" id="roster-close">閉じる</button>
   </menu>
 </dialog>
 
@@ -156,7 +188,7 @@
   <h2>遊びかた</h2>
   <div class="help">
     <p><b>目標</b>：ほかの大名家をすべて滅ぼして天下を統一すること。自分の国をすべて失うと負けです。</p>
-    <p><b>1 か月に 1 回、武将ひとりにつき 1 つ命令</b>できます。地図で自分の国（濃い色）をクリックすると、そこにいる武将と命令が出ます。全員に命令したら右上の <b>月を終える</b> を押してください。</p>
+    <p><b>ひとつの国につき 1 か月に 3 回まで命令</b>できます（武将ひとりは月 1 回）。地図で自分の国（枠が明るい色）をクリックすると、そこにいる武将と命令が出ます。命令を使い切ったら右上の <b>月を終える</b> を押してください。</p>
     <table class="help-table">
       <tr><th>🌾 開墾</th><td>農業を上げる。秋（9 月）の米の収穫が増える</td></tr>
       <tr><th>🏪 商業</th><td>商業を上げる。毎月の金の収入が増える</td></tr>
@@ -165,12 +197,15 @@
       <tr><th>⚔️ 訓練</th><td>兵の訓練度を上げる。金はかからない</td></tr>
       <tr><th>🍙 施し</th><td>米を配って民忠を上げる。民忠が低いと一揆が起きる</td></tr>
       <tr><th>🐎 移動</th><td>隣の自分の国へ武将と兵を移す</td></tr>
-      <tr><th>🔥 出陣</th><td>隣の他国へ攻め込む。兵 100 人につき米 5 が必要</td></tr>
+      <tr><th>🔥 出陣</th><td>隣の他国へ攻め込む。兵 100 人につき米 5 が必要。率いられる兵は身分で決まる</td></tr>
+      <tr><th>🔍 探索</th><td>国の中に隠れている在野の武将を探し、家臣に誘う（金 20）</td></tr>
       <tr><th>🎁 親善</th><td>他の大名に贈り物をして友好を上げる</td></tr>
       <tr><th>🤝 同盟</th><td>友好 60 以上の大名と同盟を結ぶ（24 か月）。同盟中は互いに攻められない</td></tr>
     </table>
     <p><b>合戦</b>は 1 回ずつ「攻撃」を選んで進めます。城の兵を 0 にすれば落城。不利なら「退却」で兵を守れます。10 合戦で落とせなければ引き上げになります。攻める側は、守り手より <b>1.5 倍以上</b>の戦力がほしいところです（城の防御ぶん守り手が有利）。</p>
     <p><b>武将の能力</b>：<b>統率</b>は戦と徴兵、<b>武勇</b>は戦、<b>政治</b>は内政と外交に効きます。落城で捕らえた武将は家臣に誘えます（当主はまず断ります）。</p>
+    <p><b>身分</b>：足軽頭（兵 1,500 まで）→ 侍大将（3,000）→ 部将（5,000）→ 家老（8,000）。当主は 12,000 まで率いられます。内政や合戦で<b>功績</b>がたまると自動で昇進します。</p>
+    <p><b>武将は約 1,150 人</b>。史実で 1560 年にまだ幼かった武将（伊達政宗、真田信繁、石田三成など）は、その年になると登場します。家が滅んでいれば在野になるので、探索で見つけて家臣にできます。</p>
     <p><b>金と米</b>：金は毎月、商業に応じて入ります。米は 9 月に農業に応じて収穫され、毎月兵が食べます。米が尽きると兵が逃げ出すので、兵を増やしたら開墾も忘れずに。</p>
     <p><b>灰色の国</b>は大名のいない空白地。国人衆が守っていますが、大名の国より落としやすいです。</p>
     <p class="hint">進み具合は自動でブラウザに保存されます。メニューから新しいゲームを始められます。</p>
