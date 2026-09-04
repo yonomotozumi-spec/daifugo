@@ -68,7 +68,7 @@ export function createGame({ player, seed = Date.now() % 2147483647 } = {}) {
   const provinces = {};
   for (const p of PROVINCES) {
     provinces[p.id] = {
-      id: p.id, name: p.name, owner: p.owner,
+      id: p.id, name: p.name, kuni: p.kuni, main: Boolean(p.main), owner: p.owner,
       agri: p.agri, comm: p.comm, defense: p.defense, soldiers: p.soldiers,
       loyalty: p.owner ? 65 : 55, training: 50,
       commands: 0, // 今月この国で使った命令の数
@@ -104,7 +104,24 @@ export function createGame({ player, seed = Date.now() % 2147483647 } = {}) {
     log: [], report: [], ended: null,
   };
   seedLand(state);
+  spreadGenerals(state);
   return state;
+}
+
+/**
+ * 開始時、家臣を家の城に振り分ける。本城には当主と有力な家臣を残し、
+ * 残りは支城も含めて順ぐりに配る（どの城にも武将がいるように）。
+ */
+function spreadGenerals(state) {
+  for (const d of Object.values(state.daimyos)) {
+    const castles = provincesOf(state, d.id).sort((a, b) => (b.main - a.main) || (b.soldiers - a.soldiers));
+    if (castles.length < 2) continue;
+    const gs = generalsOf(state, d.id).sort((a, b) => (b.lord - a.lord) || ((b.lead + b.valor + b.pol) - (a.lead + a.valor + a.pol)));
+    const keep = 4; // 本城に残す人数
+    gs.forEach((g, i) => {
+      g.province = i < keep ? castles[0].id : castles[(i - keep) % castles.length].id;
+    });
+  }
 }
 
 // ------------------------------------------------------------------ 参照
@@ -662,9 +679,9 @@ export function advanceMonth(state) {
 
   for (const d of aliveDaimyos(state)) {
     const ps = provincesOf(state, d.id);
-    const gold = ps.reduce((s, p) => s + Math.round(p.comm * 0.5), 0);
-    const eat = ps.reduce((s, p) => s + Math.ceil(p.soldiers / 30), 0);
-    const harvest = harvestMonth ? Math.round(ps.reduce((s, p) => s + p.agri * 25, 0) * harvestFactor) : 0;
+    const gold = ps.reduce((s, p) => s + Math.round(p.comm * 0.4), 0);
+    const eat = ps.reduce((s, p) => s + Math.ceil(p.soldiers / 25), 0);
+    const harvest = harvestMonth ? Math.round(ps.reduce((s, p) => s + p.agri * 20, 0) * harvestFactor) : 0;
     d.gold += gold;
     d.rice += harvest - eat;
     if (d.id === me) {

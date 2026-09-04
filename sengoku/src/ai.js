@@ -108,6 +108,17 @@ function actProvince(state, me, p, plan, battles) {
       }
     }
 
+    // 2b. 武将のいない自分の城には、余っている武将をひとり送る
+    if (free.length >= 4 && !moved) {
+      const empty = nb.find((id) => state.provinces[id].owner === me && generalsIn(state, id).length === 0);
+      const g = [...free].filter((x) => !x.lord).sort((a, b) => leadCap(a) - leadCap(b))[0];
+      if (empty && g && can(g, 'move')) {
+        execute(state, { type: 'move', general: g.id, target: empty, soldiers: Math.min(500, Math.floor(p.soldiers * 0.2), leadCap(g)) });
+        moved = true;
+        continue;
+      }
+    }
+
     // 3. 内政
     if (p.loyalty < 35 && can(byPol[0], 'charity')) { execute(state, { type: 'charity', general: byPol[0].id }); continue; }
     const wantSoldiers = atFront ? 9000 : enemies.length ? 4500 : 2000;

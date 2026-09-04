@@ -110,7 +110,7 @@ function buildStartDialog() {
     btn.style.setProperty('--c', d.color);
     btn.innerHTML = `
       <span class="dc-head">${portraitSVG(lord, d.color, 34)}<b>${d.name}</b><span class="dc-stars">${difficulty(d.id)}</span></span>
-      <span class="dc-lord">当主 ${lord.name}　${n} か国・武将 ${count} 人</span>
+      <span class="dc-lord">当主 ${lord.name}　${n} 城・武将 ${count} 人</span>
       <span class="dc-intro">${d.intro}</span>`;
     btn.addEventListener('click', () => startGame(d.id));
     grid.appendChild(btn);
@@ -172,7 +172,7 @@ function renderStatus() {
   $('st-gold').textContent = fmt(me.gold);
   $('st-rice').textContent = fmt(me.rice);
   const ps = E.provincesOf(game, game.player);
-  $('st-power').textContent = `国 ${ps.length} ／ 兵 ${fmt(ps.reduce((s, p) => s + p.soldiers, 0))} ／ 武将 ${E.generalsOf(game, game.player).length}`;
+  $('st-power').textContent = `城 ${ps.length} ／ 兵 ${fmt(ps.reduce((s, p) => s + p.soldiers, 0))} ／ 武将 ${E.generalsOf(game, game.player).length}`;
   const left = commandsAvailable();
   $('btn-end').textContent = left ? `月を終える（命令 残り ${left}）` : '月を終える';
   $('btn-end').disabled = Boolean(game.ended) || busy;
@@ -230,7 +230,7 @@ function renderPanel() {
       <button type="button" class="ghost small" id="btn-overview" title="国の一覧に戻る">‹ 一覧</button>
       <i class="dot" style="background:${ownerColor(p.id)}"></i>
       <h2>${p.name}</h2>
-      <span class="pp-owner">${ownerName(p.id)}${allied ? '（同盟中）' : ''}</span>
+      <span class="pp-owner">${p.kuni}${p.main ? '' : '・支城'}　${ownerName(p.id)}${allied ? '（同盟中）' : ''}</span>
       ${mine ? `<span class="budget${left ? '' : ' empty'}" id="budget">命令 残り ${left} / ${LIMIT.commandsPerProvince}</span>` : ''}
     </div>
     <div class="stats">
@@ -323,15 +323,15 @@ function renderCommands(g) {
 
 function renderOverview(box) {
   const ps = E.provincesOf(game, game.player);
-  let html = '<div class="pp-head"><h2>自分の国</h2></div>';
-  html += `<p class="hint">国をクリックすると、そこにいる武将に命令できます（1 つの国につき月 ${LIMIT.commandsPerProvince} 回まで）。地図の自分の国をクリックしても同じです。</p>`;
+  let html = '<div class="pp-head"><h2>自分の城</h2></div>';
+  html += `<p class="hint">城をクリックすると、そこにいる武将に命令できます（1 つの城につき月 ${LIMIT.commandsPerProvince} 回まで）。地図の自分の領地をクリックしても同じです。</p>`;
   html += '<ul class="overview">';
   for (const p of ps) {
     const gens = E.generalsIn(game, p.id);
     const free = gens.filter((g) => !g.acted).length;
     const left = Math.min(free, E.commandsLeft(game, p.id));
     html += `<li><button type="button" class="ov" data-select="${p.id}">
-      <b>${p.name}</b><span>兵 ${fmt(p.soldiers)}</span>
+      <b>${p.name}<small class="kuni">${p.kuni}</small></b><span>兵 ${fmt(p.soldiers)}</span>
       <span>武将 ${gens.length}</span>
       <span class="${left ? 'todo' : 'done'}">${left ? `命令 残り ${left}` : gens.length ? '命令済み' : '武将なし'}</span>
     </button></li>`;

@@ -4,3 +4,4 @@ test/screenshots/
 fishing/test/screenshots/
 sengoku/test/screenshots/
 .DS_Store
+__pycache__/

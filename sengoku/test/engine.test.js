@@ -55,7 +55,8 @@ test('createGame は選んだ大名をプレイヤーにして 1560 年 4 月か
   assert.equal(s.player, 'takeda');
   assert.equal(s.year, 1560);
   assert.equal(s.month, 4);
-  assert.equal(provincesOf(s, 'takeda').length, 2);
+  assert.ok(provincesOf(s, 'takeda').length >= 2, '武田は本城と支城を持つ');
+  assert.ok(provincesOf(s, 'takeda').every((p) => generalsIn(s, p.id).length > 0), 'どの城にも武将がいる');
   assert.equal(lord(s, 'takeda').name, '武田信玄');
   assert.equal(aliveDaimyos(s).length, DAIMYOS.length);
   assert.throws(() => createGame({ player: 'nobody' }));
@@ -94,17 +95,16 @@ test('開墾・まちづくりはマスを選んで田・町のレベルを上�
   assert.equal(execute(s, { type: 'commerce', general: nobunaga.id }).ok, false, '同じ月に 2 回は動けない');
 
   // マスを指定しなければ、いちばん安いマスに作る（CPU 用）
-  const hideyoshi = generalsOf(s, 'oda').find((g) => g.name === '木下秀吉');
+  const [second, third] = generalsIn(s, 'owari').filter((g) => !g.acted);
   const comm = s.provinces.owari.comm;
-  const r2 = execute(s, { type: 'commerce', general: hideyoshi.id });
+  const r2 = execute(s, { type: 'commerce', general: second.id });
   assert.ok(r2.ok, r2.text);
   assert.ok(s.provinces.owari.comm >= comm + LEVEL_STAT);
   assert.ok(cellBuild(s, r2.cell[0], r2.cell[1]).town >= 1);
 
-  const niwa = generalsOf(s, 'oda').find((g) => g.name === '丹羽長秀');
   const def = s.provinces.owari.defense;
-  execute(s, { type: 'fortify', general: niwa.id });
-  assert.equal(s.provinces.owari.defense, def + 2 + Math.floor(niwa.pol / 15));
+  execute(s, { type: 'fortify', general: third.id });
+  assert.equal(s.provinces.owari.defense, def + 2 + Math.floor(third.pol / 15));
 });
 
 test('田や町は城か田・町の隣にしか作れず、田のマスに町は作れない', () => {
@@ -184,7 +184,8 @@ test('田がレベル 3 になるとそのマスはもう開墾できず、全�
 test('マス目の地図は国ごとにまとまっていて、城は自分の国の平地にある', () => {
   for (const p of PROVINCES) {
     const cells = cellsOf(p.id);
-    assert.ok(cells.length >= 10, `${p.name} のマスが少なすぎる（${cells.length}）`);
+    assert.ok(cells.length >= 6, `${p.name} のマスが少なすぎる（${cells.length}）`);
+    assert.ok(p.kuni, `${p.name} の国名がない`);
     const [c, r] = castleOf(p.id);
     assert.equal(provinceAt(c, r), p.id, `${p.name} の城が自分の国にない`);
     assert.equal(terrainAt(c, r), '.', `${p.name} の城が平地にない`);
@@ -199,18 +200,21 @@ test('マス目の地図は国ごとにまとまっていて、城は自分の�
 
 // ------------------------------------------------------------------ 移動
 
-test('移動は隣の自分の国にだけでき、兵も一緒に動く', () => {
+test('移動は隣の自分の城にだけでき、兵も一緒に動く', () => {
   const s = game('takeda');
-  const shingen = lord(s, 'takeda'); // 甲斐
-  assert.equal(execute(s, { type: 'move', general: shingen.id, target: 'suruga', soldiers: 100 }).ok, false, '他家の国へは移動できない');
+  const shingen = lord(s, 'takeda'); // 躑躅ヶ崎館（甲斐）
+  const own = adjacent('kai').find((id) => s.provinces[id].owner === 'takeda');
+  const foreign = adjacent('kai').find((id) => s.provinces[id].owner && s.provinces[id].owner !== 'takeda');
+  assert.ok(own && foreign, '甲斐の隣に自分の城と他家の城がある');
+  assert.equal(execute(s, { type: 'move', general: shingen.id, target: foreign, soldiers: 100 }).ok, false, '他家の城へは移動できない');
   assert.equal(execute(s, { type: 'move', general: shingen.id, target: 'echigo', soldiers: 100 }).ok, false, '隣でない');
   const kai = s.provinces.kai.soldiers;
-  const shinano = s.provinces.shinano.soldiers;
-  const r = execute(s, { type: 'move', general: shingen.id, target: 'shinano', soldiers: 2000 });
+  const dest = s.provinces[own].soldiers;
+  const r = execute(s, { type: 'move', general: shingen.id, target: own, soldiers: 2000 });
   assert.ok(r.ok, r.text);
-  assert.equal(shingen.province, 'shinano');
+  assert.equal(shingen.province, own);
   assert.equal(s.provinces.kai.soldiers, kai - 2000);
-  assert.equal(s.provinces.shinano.soldiers, shinano + 2000);
+  assert.equal(s.provinces[own].soldiers, dest + 2000);
 });
 
 // ------------------------------------------------------------------ 合戦
@@ -272,13 +276,15 @@ test('10 合戦で落とせなければ引き上げになる', () => {
   assert.ok(b.round <= LIMIT.battleRounds);
 });
 
-test('兵のいない国は無血開城する', () => {
+test('兵のいない城は無血開城する', () => {
   const s = game('oda', 5);
-  s.provinces.ise.soldiers = 0;
-  const b = execute(s, { type: 'march', general: lord(s, 'oda').id, target: 'ise', soldiers: 1000 }).battle;
+  const target = adjacent('owari').find((id) => !s.provinces[id].owner);
+  assert.ok(target, '尾張の隣に空白地がある');
+  s.provinces[target].soldiers = 0;
+  const b = execute(s, { type: 'march', general: lord(s, 'oda').id, target, soldiers: 1000 }).battle;
   assert.ok(b.done);
   assert.equal(b.result, 'win');
-  assert.equal(s.provinces.ise.owner, 'oda');
+  assert.equal(s.provinces[target].owner, 'oda');
 });
 
 test('同盟中の相手には出陣できず、期限が来ると切れる', () => {
@@ -347,7 +353,14 @@ test('当主を失った家は家督を継ぐ', () => {
   const b = execute(s, { type: 'march', general: lord(s, 'oda').id, target: 'mino', soldiers: 12000 }).battle;
   while (!b.done) battleRound(s, b);
   assert.equal(b.result, 'win');
-  assert.equal(s.daimyos.saito.alive, false, '一国の斎藤家は国を失って滅亡する');
+  assert.equal(s.provinces.mino.owner, 'oda');
+  // 斎藤家には支城が残るので滅びない。当主が捕まっていれば家督が継がれている
+  assert.equal(s.daimyos.saito.alive, true);
+  const yoshitatsu = Object.values(s.generals).find((g) => g.name === '斎藤義龍');
+  const newLord = lordOf(s, 'saito');
+  assert.ok(newLord, '当主がいる');
+  if (yoshitatsu.status === 'captured') assert.notEqual(newLord.id, yoshitatsu.id);
+  else assert.equal(newLord.id, yoshitatsu.id);
 });
 
 // ------------------------------------------------------------------ 月の進行
@@ -358,8 +371,9 @@ test('月が進むと金が入り、兵糧が減り、9 月に収穫がある', 
   const rice = s.daimyos.oda.rice;
   advanceMonth(s);
   assert.equal(s.month, 5);
-  assert.equal(s.daimyos.oda.gold, gold + Math.round(s.provinces.owari.comm * 0.5));
-  assert.equal(s.daimyos.oda.rice, rice - Math.ceil(s.provinces.owari.soldiers / 30));
+  const ps = provincesOf(s, 'oda');
+  assert.equal(s.daimyos.oda.gold, gold + ps.reduce((sum, p) => sum + Math.round(p.comm * 0.4), 0));
+  assert.equal(s.daimyos.oda.rice, rice - ps.reduce((sum, p) => sum + Math.ceil(p.soldiers / 25), 0));
   while (s.month !== 8) advanceMonth(s);
   const before = s.daimyos.oda.rice;
   advanceMonth(s); // 9 月になった瞬間に収穫される
@@ -416,7 +430,8 @@ test('城の防御が高いほど守りの戦力が上がる', () => {
 
 test('CPU は国ごとの命令を使い切り、プレイヤーの武将は動かさない', () => {
   const s = game('oda', 7);
-  const before = provincesOf(s, 'takeda').map((p) => p.id);
+  const before = provincesOf(s, 'takeda').filter((p) => generalsIn(s, p.id).length >= 3).map((p) => p.id);
+  assert.ok(before.length > 0);
   runAi(s);
   // 月の初めから持っていた国では命令を使い切る（その月に取った国や逃げ込んだ先は除く）
   for (const id of before) {
@@ -430,9 +445,10 @@ test('CPU は国ごとの命令を使い切り、プレイヤーの武将は動�
 
 test('CPU 同士で 10 年戦わせると国の取り合いが起きる', () => {
   const s = game('oda', 11);
+  const neutralStart = Object.values(s.provinces).filter((p) => !p.owner).length;
   for (let i = 0; i < 120 && !s.ended; i++) { runAi(s, { includePlayer: true }); advanceMonth(s); }
   const neutral = Object.values(s.provinces).filter((p) => !p.owner).length;
-  assert.ok(neutral < 11, '空白地が減っている');
+  assert.ok(neutral < neutralStart / 2, `空白地が減っている（${neutralStart} → ${neutral}）`);
   assert.ok(aliveDaimyos(s).length < DAIMYOS.length, '滅んだ家がある');
   const top = aliveDaimyos(s).map((d) => daimyoSummary(s, d.id)).sort((a, b) => b.score - a.score)[0];
   assert.ok(top.provinces >= 3);

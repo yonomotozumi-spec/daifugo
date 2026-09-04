@@ -5,8 +5,11 @@
  *   国の農業・商業は、田・町のレベルの合計から計算する（refreshProvince）
  */
 
-import { CASTLES, COLS, PROVINCE, PROVINCE_ORDER, ROWS, TERRAIN } from './mapdata.js';
+import { CASTLE_INFO, COLS, PROVINCE, ROWS, TERRAIN } from './mapdata.js';
 import { PROVINCES } from './data.js';
+
+const IDS = CASTLE_INFO.map((c) => c[0]);
+const CASTLES = Object.fromEntries(CASTLE_INFO.map((c) => [c[0], [c[3], c[4]]]));
 
 export { COLS, ROWS };
 
@@ -19,8 +22,10 @@ export const key = (c, r) => `${c},${r}`;
 export const parseKey = (k) => k.split(',').map(Number);
 export const terrainAt = (c, r) => (r < 0 || r >= ROWS || c < 0 || c >= COLS ? '~' : TERRAIN[r][c]);
 export function provinceAt(c, r) {
-  const ch = PROVINCE[r]?.[c];
-  return !ch || ch === '~' ? null : PROVINCE_ORDER[ch.charCodeAt(0) - 65];
+  const row = PROVINCE[r];
+  if (!row || c < 0 || c >= COLS) return null;
+  const code = row.substr(c * 2, 2);
+  return code === '~~' ? null : IDS[parseInt(code, 16)];
 }
 export const castleOf = (pid) => CASTLES[pid];
 export const isCastle = (c, r) => {

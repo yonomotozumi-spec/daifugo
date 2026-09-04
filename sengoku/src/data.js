@@ -2,104 +2,81 @@
  * 戦国シミュレーションのマスターデータ。
  * 1560 年（桶狭間の戦いの年）の勢力図をもとにしている。
  *
- *   国（province） … 44 か国。x / y は地図上の位置（viewBox 920 x 640）
+ *   城（province） … 約 130 城。それぞれが領地（マス）を持つ。位置と隣接は mapdata.js
  *   大名（daimyo） … 19 家。国を持たない「空白地」は国人衆が守っている
  *   武将（general） … 約 1150 人（generals.js）。統率 / 武勇 / 政治 の 3 能力と身分
  *
  * 数字はすべてゲーム用の目安で、史実の石高などとは一致しない。
  */
 
-// ------------------------------------------------------------------ 国
+// ------------------------------------------------------------------ 城（領地）
 
-// [id, 名前, 島, x, y, 農業, 商業, 防御, 兵数, 大名 or null]
-const P = [
+import { CASTLE_INFO, LINKS as MAP_LINKS } from './mapdata.js';
+
+/**
+ * ゲームの「国」は 1 つの城とその領地のこと（コードでは province と呼んでいる）。
+ * 城の位置・国名・隣接は mapdata.js（tools/build-map.py が作る）にあり、
+ * ここでは持ち主と最初の数値を決める。表にない城は本城/支城と持ち主から既定値を使う。
+ *
+ *   id: [大名 or null, 農業, 商業, 防御, 兵数]
+ */
+const OWNER = {
   // 九州
-  ['satsuma', '薩摩', 'kyushu', 92, 585, 55, 40, 70, 5000, 'shimazu'],
-  ['hyuga', '日向', 'kyushu', 158, 552, 40, 30, 45, 2500, 'shimazu'],
-  ['higo', '肥後', 'kyushu', 108, 515, 60, 40, 50, 3000, null],
-  ['hizen', '肥前', 'kyushu', 58, 452, 50, 55, 60, 4000, 'ryuzoji'],
-  ['chikuzen', '筑前', 'kyushu', 118, 428, 55, 70, 55, 4000, 'otomo'],
-  ['bungo', '豊後', 'kyushu', 182, 482, 60, 65, 65, 5500, 'otomo'],
+  satsuma: ['shimazu', 55, 40, 70, 5000], izumi: ['shimazu', 35, 30, 45, 2000], miyakonojo: ['shimazu', 35, 25, 45, 2000],
+  hyuga: ['shimazu', 40, 30, 45, 2500],
+  hizen: ['ryuzoji', 50, 55, 60, 4000],
+  chikuzen: ['otomo', 55, 70, 55, 4000], iwaya: ['otomo', 35, 35, 50, 2000], kokura: ['otomo', 35, 45, 45, 2000],
+  bungo: ['otomo', 60, 65, 65, 5500], niujima: ['otomo', 35, 40, 55, 2000],
   // 中国
-  ['nagato', '長門', 'honshu', 196, 396, 50, 60, 55, 3500, 'mori'],
-  ['aki', '安芸', 'honshu', 256, 404, 55, 60, 75, 6000, 'mori'],
-  ['bingo', '備後', 'honshu', 316, 404, 50, 50, 50, 3000, 'mori'],
-  ['izumo', '出雲', 'honshu', 252, 336, 55, 55, 80, 5500, 'amago'],
-  ['hoki', '伯耆', 'honshu', 322, 330, 40, 35, 45, 2500, 'amago'],
-  ['bizen', '備前', 'honshu', 376, 404, 50, 50, 50, 3000, null],
-  ['harima', '播磨', 'honshu', 432, 378, 60, 55, 55, 3500, null],
-  ['tajima', '但馬', 'honshu', 400, 322, 35, 40, 45, 2000, null],
+  nagato: ['mori', 50, 60, 55, 3500], katsuyama: ['mori', 30, 40, 45, 2000], tomita: ['mori', 35, 35, 45, 2000],
+  aki: ['mori', 55, 60, 75, 6000], sakurao: ['mori', 35, 40, 45, 2000], bingo: ['mori', 50, 50, 50, 3000],
+  hieo: ['mori', 30, 25, 45, 1500], sanbonmatsu: ['mori', 30, 25, 45, 1500],
+  izumo: ['amago', 55, 55, 80, 5500], shirakage: ['amago', 30, 30, 45, 2000], hoki: ['amago', 40, 35, 45, 2500],
+  yamabuki: ['amago', 30, 50, 50, 2000],
   // 四国
-  ['iyo', '伊予', 'shikoku', 252, 488, 45, 45, 50, 3000, null],
-  ['tosa', '土佐', 'shikoku', 306, 532, 45, 35, 55, 3500, 'chosokabe'],
-  ['sanuki', '讃岐', 'shikoku', 340, 470, 45, 50, 45, 2500, 'miyoshi'],
-  ['awa', '阿波', 'shikoku', 398, 492, 50, 45, 60, 4000, 'miyoshi'],
+  tosa: ['chosokabe', 45, 35, 55, 3500],
+  sanuki: ['miyoshi', 45, 50, 45, 2500], awa: ['miyoshi', 50, 45, 60, 4000], hakuchi: ['miyoshi', 30, 25, 45, 1500],
+  sumoto: ['miyoshi', 30, 35, 45, 1500],
   // 近畿
-  ['settsu', '摂津', 'honshu', 456, 436, 55, 85, 60, 5000, 'miyoshi'],
-  ['yamashiro', '山城', 'honshu', 500, 380, 50, 95, 55, 4000, 'miyoshi'],
-  ['yamato', '大和', 'honshu', 516, 444, 55, 55, 55, 3000, null],
-  ['kii', '紀伊', 'honshu', 480, 498, 40, 55, 55, 3500, null],
-  ['minamiomi', '南近江', 'honshu', 562, 376, 60, 70, 70, 4500, 'rokkaku'],
-  ['kitaomi', '北近江', 'honshu', 556, 314, 55, 50, 65, 4000, 'azai'],
-  ['echizen', '越前', 'honshu', 574, 256, 60, 60, 65, 5000, 'asakura'],
-  ['ise', '伊勢', 'honshu', 578, 440, 55, 60, 50, 3500, null],
+  settsu: ['miyoshi', 55, 85, 60, 5000], iimori: ['miyoshi', 40, 55, 60, 3000], kishiwada: ['miyoshi', 35, 55, 50, 2000],
+  yamashiro: ['miyoshi', 50, 95, 55, 4000],
+  minamiomi: ['rokkaku', 60, 70, 70, 4500], kitaomi: ['azai', 55, 50, 65, 4000],
+  echizen: ['asakura', 60, 60, 65, 5000], kanegasaki: ['asakura', 30, 40, 50, 2000],
   // 中部
-  ['mino', '美濃', 'honshu', 620, 360, 65, 55, 75, 5500, 'saito'],
-  ['owari', '尾張', 'honshu', 636, 424, 65, 70, 55, 5000, 'oda'],
-  ['mikawa', '三河', 'honshu', 692, 448, 55, 45, 55, 3500, 'matsudaira'],
-  ['totomi', '遠江', 'honshu', 752, 456, 50, 45, 50, 3500, 'imagawa'],
-  ['suruga', '駿河', 'honshu', 812, 440, 60, 65, 65, 5500, 'imagawa'],
-  ['kai', '甲斐', 'honshu', 770, 392, 50, 45, 70, 6000, 'takeda'],
-  ['shinano', '信濃', 'honshu', 706, 352, 55, 40, 60, 5000, 'takeda'],
-  ['etchu', '越中', 'honshu', 640, 286, 50, 45, 45, 3000, null],
-  ['echigo', '越後', 'honshu', 712, 268, 65, 60, 75, 7000, 'uesugi'],
+  echigo: ['uesugi', 65, 60, 75, 7000], tochio: ['uesugi', 40, 35, 50, 2500], shibata: ['uesugi', 45, 40, 45, 2500],
+  kozuke: ['uesugi', 50, 45, 55, 3500], numata: ['uesugi', 30, 25, 50, 1500],
+  mino: ['saito', 65, 55, 75, 5500], ogaki: ['saito', 40, 40, 50, 2000], gujo: ['saito', 25, 25, 45, 1500],
+  owari: ['oda', 65, 70, 55, 5000], inuyama: ['oda', 30, 35, 50, 1500],
+  mikawa: ['matsudaira', 55, 45, 55, 3500],
+  yoshida: ['imagawa', 35, 35, 50, 2000], totomi: ['imagawa', 50, 45, 50, 3500], kakegawa: ['imagawa', 35, 35, 50, 2000],
+  suruga: ['imagawa', 60, 65, 65, 5500],
+  kai: ['takeda', 50, 45, 70, 6000], shinano: ['takeda', 55, 40, 60, 5000], kaizu: ['takeda', 40, 30, 60, 3000],
+  takato: ['takeda', 30, 25, 55, 2000], iida: ['takeda', 30, 30, 45, 1500],
   // 関東
-  ['kozuke', '上野', 'honshu', 770, 322, 50, 45, 55, 3500, 'uesugi'],
-  ['musashi', '武蔵', 'honshu', 826, 356, 65, 65, 60, 5500, 'hojo'],
-  ['sagami', '相模', 'honshu', 866, 412, 55, 60, 90, 6000, 'hojo'],
-  ['boso', '房総', 'honshu', 896, 466, 50, 45, 50, 3500, null],
-  ['shimotsuke', '下野', 'honshu', 822, 290, 45, 40, 50, 3000, null],
-  ['hitachi', '常陸', 'honshu', 884, 332, 55, 50, 60, 4500, 'satake'],
+  nirayama: ['hojo', 30, 35, 60, 2000], musashi: ['hojo', 65, 65, 60, 5500], edo: ['hojo', 45, 55, 55, 3000],
+  hachigata: ['hojo', 35, 30, 60, 2500], iwatsuki: ['hojo', 40, 35, 50, 2000], sagami: ['hojo', 55, 60, 90, 6000],
+  hitachi: ['satake', 55, 50, 60, 4500], mito: ['satake', 35, 35, 45, 2000],
   // 東北
-  ['dewa', '出羽', 'honshu', 776, 206, 50, 40, 55, 3500, 'date'],
-  ['mutsu', '陸奥', 'honshu', 846, 224, 55, 45, 65, 5000, 'date'],
-  ['oshu', '奥州', 'honshu', 868, 150, 45, 30, 50, 3000, null],
-];
+  dewa: ['date', 50, 40, 55, 3500], mutsu: ['date', 55, 45, 65, 5000],
+  // 空白地のうち、少し豊かな所
+  higo: [null, 60, 40, 50, 3000], harima: [null, 60, 55, 55, 3500], bizen: [null, 50, 50, 50, 3000],
+  yamato: [null, 55, 55, 55, 3000], kii: [null, 40, 55, 55, 3500], ise: [null, 55, 60, 50, 3500],
+  iyo: [null, 45, 45, 50, 3000], etchu: [null, 50, 45, 45, 3000], oyama: [null, 50, 50, 55, 4000],
+  boso: [null, 50, 45, 50, 3500], shimotsuke: [null, 45, 40, 50, 3000], yamagata: [null, 45, 35, 50, 3000],
+  kurokawa: [null, 50, 40, 60, 3500], oshu: [null, 45, 30, 50, 3000], tajima: [null, 35, 40, 45, 2000],
+  tottori: [null, 35, 35, 50, 2500],
+};
 
-export const PROVINCES = P.map(([id, name, island, x, y, agri, comm, defense, soldiers, owner]) => ({
-  id, name, island, x, y, agri, comm, defense, soldiers, owner,
-}));
+export const PROVINCES = CASTLE_INFO.map(([id, name, kuni, x, y, main]) => {
+  const row = OWNER[id];
+  const owner = row ? row[0] : null;
+  const def = main ? [owner, 40, 35, 50, 2500] : [owner, 30, 25, 40, owner ? 1500 : 1200];
+  const [, agri, comm, defense, soldiers] = row || def;
+  return { id, name, kuni, main, x, y, agri, comm, defense, soldiers, owner };
+});
 
-// 隣接（道でつながっている国どうし）。'sea' は海路。
-export const LINKS = [
-  ['satsuma', 'hyuga'], ['satsuma', 'higo'], ['hyuga', 'higo'], ['hyuga', 'bungo'],
-  ['higo', 'hizen'], ['higo', 'chikuzen'], ['higo', 'bungo'], ['hizen', 'chikuzen'],
-  ['chikuzen', 'bungo'], ['chikuzen', 'nagato', 'sea'], ['bungo', 'iyo', 'sea'],
-
-  ['nagato', 'aki'], ['nagato', 'izumo'], ['aki', 'bingo'], ['aki', 'izumo'], ['izumo', 'hoki'],
-  ['bingo', 'hoki'], ['bingo', 'bizen'], ['hoki', 'bizen'], ['hoki', 'tajima'], ['bizen', 'harima'],
-  ['tajima', 'harima'], ['tajima', 'yamashiro'], ['harima', 'settsu'],
-  ['bizen', 'sanuki', 'sea'], ['aki', 'iyo', 'sea'],
-
-  ['iyo', 'tosa'], ['iyo', 'sanuki'], ['tosa', 'sanuki'], ['tosa', 'awa'], ['sanuki', 'awa'],
-  ['awa', 'kii', 'sea'], ['awa', 'settsu', 'sea'],
-
-  ['settsu', 'yamashiro'], ['settsu', 'yamato'], ['settsu', 'kii'], ['yamashiro', 'minamiomi'],
-  ['yamashiro', 'yamato'], ['yamato', 'ise'], ['yamato', 'kii'], ['kii', 'ise'],
-  ['minamiomi', 'kitaomi'], ['minamiomi', 'ise'], ['minamiomi', 'mino'], ['kitaomi', 'echizen'],
-  ['kitaomi', 'mino'], ['echizen', 'etchu'], ['echizen', 'mino'], ['ise', 'owari'],
-
-  ['mino', 'owari'], ['mino', 'shinano'], ['owari', 'mikawa'], ['mikawa', 'totomi'],
-  ['mikawa', 'shinano'], ['totomi', 'suruga'], ['totomi', 'shinano'], ['suruga', 'kai'],
-  ['suruga', 'sagami'], ['kai', 'shinano'], ['kai', 'musashi'], ['shinano', 'echigo'],
-  ['shinano', 'kozuke'], ['shinano', 'etchu'], ['etchu', 'echigo'],
-
-  ['kozuke', 'musashi'], ['kozuke', 'shimotsuke'], ['kozuke', 'echigo'], ['musashi', 'sagami'],
-  ['musashi', 'boso'], ['musashi', 'shimotsuke'], ['musashi', 'hitachi'], ['sagami', 'boso', 'sea'],
-  ['boso', 'hitachi'], ['shimotsuke', 'hitachi'], ['shimotsuke', 'mutsu'], ['hitachi', 'mutsu'],
-
-  ['dewa', 'mutsu'], ['dewa', 'echigo'], ['dewa', 'oshu'], ['mutsu', 'oshu'],
-];
+// 隣接（領地が接している城どうし）。'sea' は海路。
+export const LINKS = MAP_LINKS;
 
 // ------------------------------------------------------------------ 大名
 
@@ -117,7 +94,7 @@ const D = [
   ['azai', '浅井家', '#4fb0c6', 'kitaomi', 400, 4000, '北近江の若き当主。朝倉との盟友関係が頼り'],
   ['asakura', '朝倉家', '#7f5a9e', 'echizen', 600, 5500, '越前の名家。一乗谷の栄華を守れるか'],
   ['rokkaku', '六角家', '#a0a03a', 'minamiomi', 500, 4000, '南近江の守護大名。京に近く商業は盛ん'],
-  ['miyoshi', '三好家', '#d65f8e', 'yamashiro', 1000, 7000, '京を押さえる天下人。四国から畿内まで四か国を持つ最大勢力'],
+  ['miyoshi', '三好家', '#d65f8e', 'yamashiro', 1000, 7000, '京を押さえる天下人。四国から畿内まで八つの城を持つ最大勢力'],
   ['mori', '毛利家', '#3f8f3f', 'aki', 900, 7000, '中国地方の覇者。三本の矢の結束で尼子・大友と戦う'],
   ['amago', '尼子家', '#5f6fb0', 'izumo', 500, 4500, '山陰の雄。月山富田城は堅城。毛利との争いが続く'],
   ['chosokabe', '長宗我部家', '#c47f3a', 'tosa', 300, 3500, '土佐の小勢力。まずは四国統一を目指す'],

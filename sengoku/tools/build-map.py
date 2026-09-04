@@ -2,17 +2,27 @@
 """
 日本の都道府県の地形データ（GeoJSON）から、ゲーム用のマス目地図 src/mapdata.js を作る。
 
-  python3 sengoku/tools/build-map.py path/to/japan.geojson
+  python3 sengoku/tools/build-map.py path/to/japan.geojson [sengoku/src/mapdata.js]
 
 入力は https://github.com/dataofjapan/land の japan.geojson（都道府県ごとの MultiPolygon）。
-北海道・沖縄は 1560 年の舞台ではないので除く。地図は日本列島が横に寝るように約 42 度回転させる。
-地形（平地・森・山）は標高データがないので、海からの距離と主な平野の位置から決めている。
+北海道・沖縄は 1560 年の舞台ではないので除く。地図は日本列島が横に寝るように約 30 度回転させる。
+
+手順
+  1. 都道府県ごとの多角形を細かい緯度経度の格子に塗る
+  2. 回転したマス目の中心が、どの都道府県にあるかを調べ、緯度経度の目安で旧国（国）に分ける
+  3. 各マスを、同じ国の中でいちばん近い城の領地にする（castles.py の一覧）
+  4. 領地が接している城どうしを隣接とし、海路（castles.py）を足す
+  5. 地形（平地・森・山）は標高データがないので、海からの距離と主な平野の位置から決める
 """
 
 import json
 import math
+import os
 import random
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from castles import CASTLES, SEA_LINKS  # noqa: E402
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else 'japan.geojson'
 OUT = sys.argv[2] if len(sys.argv) > 2 else 'sengoku/src/mapdata.js'
@@ -106,7 +116,6 @@ CX, CY = 135.7, 36.0
 def to_grid_space(lon, lat):
     x = (lon - CX) * KX
     y = lat - CY
-    # 反時計回りに回す（列島が横に寝る）
     return (x * math.cos(ANGLE) + y * math.sin(ANGLE), -x * math.sin(ANGLE) + y * math.cos(ANGLE))
 
 
@@ -116,15 +125,14 @@ def to_lonlat(gx, gy):
     return (x / KX + CX, y + CY)
 
 
-# 陸の範囲を調べる
 xs, ys = [], []
 for r in range(0, FH, 3):
     for c in range(0, FW, 3):
-        if fine[r][c]:
+        if fine[r][c] and not offshore(LON0 + c * FINE, LAT0 + r * FINE):
             gx, gy = to_grid_space(LON0 + c * FINE, LAT0 + r * FINE)
             xs.append(gx)
             ys.append(gy)
-COLS = 176
+COLS = 196
 CELL = (max(xs) - min(xs)) / (COLS - 4)
 GX0 = min(xs) - 2 * CELL
 GY1 = max(ys) + 2 * CELL
@@ -132,47 +140,97 @@ ROWS = int((max(ys) - min(ys)) / CELL) + 4
 
 # ------------------------------------------------------------------ 都道府県 → 国
 
-def province_of(pid, lon, lat):
-    m = {
-        46: 'satsuma', 45: 'hyuga', 43: 'higo', 41: 'hizen', 42: 'hizen', 40: 'chikuzen', 44: 'bungo',
-        35: 'nagato', 32: 'izumo', 31: 'hoki', 33: 'bizen',
-        38: 'iyo', 39: 'tosa', 37: 'sanuki', 36: 'awa',
-        27: 'settsu', 29: 'yamato', 30: 'kii', 18: 'echizen', 24: 'ise',
-        21: 'mino', 19: 'kai', 20: 'shinano', 16: 'etchu', 17: 'etchu', 15: 'echigo',
-        10: 'kozuke', 11: 'musashi', 13: 'musashi', 14: 'sagami', 12: 'boso', 9: 'shimotsuke', 8: 'hitachi',
-        6: 'dewa', 5: 'dewa', 7: 'mutsu', 4: 'mutsu', 3: 'oshu', 2: 'oshu',
+
+def kuni_of(pid, lon, lat):
+    simple = {
+        46: '薩摩', 43: '肥後', 41: '肥前', 42: '肥前', 44: '豊後',
+        32: '出雲', 31: '伯耆', 38: '伊予', 39: '土佐', 37: '讃岐', 36: '阿波',
+        29: '大和', 30: '紀伊', 21: '美濃', 19: '甲斐', 20: '信濃', 16: '越中', 15: '越後',
+        10: '上野', 11: '武蔵', 13: '武蔵', 14: '相模', 9: '下野', 8: '常陸',
     }
-    if pid == 34:  # 広島：西が安芸、東が備後
-        return 'aki' if lon < 132.95 else 'bingo'
-    if pid == 28:  # 兵庫：北が但馬、淡路は阿波（三好領）、南が播磨
+    if pid in simple:
+        k = simple[pid]
+        if pid == 46 and lon > 130.75:
+            return '大隅'
+        if pid == 32 and lon < 132.65:
+            return '石見'
+        if pid == 31 and lon > 133.75:
+            return '因幡'
+        if pid == 21 and lat > 35.9:
+            return '飛騨'
+        if pid == 15 and lon < 138.7 and lat > 37.7:
+            return '佐渡'
+        return k
+    if pid == 45:
+        return '日向'
+    if pid == 40:  # 福岡：筑前・筑後・豊前
+        if lon > 130.85 and lat > 33.55:
+            return '豊前'
+        return '筑後' if lat < 33.35 else '筑前'
+    if pid == 35:  # 山口：周防・長門
+        return '長門' if lon < 131.35 else '周防'
+    if pid == 34:  # 広島：安芸・備後
+        return '安芸' if lon < 132.95 else '備後'
+    if pid == 33:  # 岡山：備前・美作
+        return '美作' if lat > 34.95 else '備前'
+    if pid == 28:  # 兵庫：但馬・丹波・淡路・播磨
         if lat > 35.15:
-            return 'tajima'
+            return '但馬'
         if 134.6 < lon < 135.05 and 34.1 < lat < 34.65:
-            return 'awa'
-        return 'harima'
-    if pid == 26:  # 京都：北の丹後は但馬にまとめる
-        return 'tajima' if lat > 35.35 else 'yamashiro'
-    if pid == 25:  # 滋賀：北近江と南近江
-        return 'kitaomi' if lat > 35.25 else 'minamiomi'
-    if pid == 23:  # 愛知：尾張と三河
-        return 'owari' if lon < 137.18 else 'mikawa'
-    if pid == 22:  # 静岡：遠江と駿河（伊豆は駿河に）
-        return 'totomi' if lon < 138.2 else 'suruga'
-    return m.get(pid)
+            return '淡路'
+        if lon > 134.85 and lat > 34.95:
+            return '丹波'
+        return '播磨'
+    if pid == 26:  # 京都：丹後・丹波・山城
+        if lat > 35.35:
+            return '丹後'
+        if lat > 34.95 and lon < 135.55:
+            return '丹波'
+        return '山城'
+    if pid == 27:  # 大阪：摂津・河内・和泉
+        if lat > 34.7:
+            return '摂津'
+        return '河内' if lon > 135.5 else '和泉'
+    if pid == 25:
+        return '近江'
+    if pid == 24:  # 三重：伊賀・伊勢
+        return '伊賀' if lon < 136.3 and lat < 34.95 and lat > 34.55 else '伊勢'
+    if pid == 18:  # 福井：若狭・越前
+        return '若狭' if lon < 136.0 and lat < 35.72 else '越前'
+    if pid == 17:  # 石川：加賀・能登
+        return '能登' if lat > 36.85 else '加賀'
+    if pid == 23:  # 愛知：尾張・三河
+        return '尾張' if lon < 137.18 else '三河'
+    if pid == 22:  # 静岡：遠江・駿河・伊豆
+        if lon > 138.75:
+            return '伊豆'
+        return '遠江' if lon < 138.2 else '駿河'
+    if pid == 12:  # 千葉：安房・上総・下総
+        if lat < 35.15:
+            return '安房'
+        return '上総' if lat < 35.55 else '下総'
+    if pid == 7:  # 福島：磐城・岩代・会津
+        if lon > 140.65:
+            return '磐城'
+        return '会津' if lon < 140.1 else '岩代'
+    if pid == 4:  # 宮城
+        return '陸前'
+    if pid == 3:  # 岩手
+        return '陸奥' if lat > 40.0 else '陸中'
+    if pid == 2:  # 青森：津軽・陸奥
+        return '津軽' if lon < 141.0 else '陸奥'
+    if pid == 6:  # 山形：庄内・出羽
+        return '庄内' if lon < 140.0 else '出羽'
+    if pid == 5:  # 秋田
+        return '羽後'
+    return None
 
 
-PROVINCE_ORDER = [
-    'satsuma', 'hyuga', 'higo', 'hizen', 'chikuzen', 'bungo',
-    'nagato', 'aki', 'bingo', 'izumo', 'hoki', 'bizen', 'harima', 'tajima',
-    'iyo', 'tosa', 'sanuki', 'awa',
-    'settsu', 'yamashiro', 'yamato', 'kii', 'minamiomi', 'kitaomi', 'echizen', 'ise',
-    'mino', 'owari', 'mikawa', 'totomi', 'suruga', 'kai', 'shinano', 'etchu', 'echigo',
-    'kozuke', 'musashi', 'sagami', 'boso', 'shimotsuke', 'hitachi',
-    'dewa', 'mutsu', 'oshu',
-]
-PIDX = {p: i for i, p in enumerate(PROVINCE_ORDER)}
+def km(lon1, lat1, lon2, lat2):
+    return math.hypot((lon1 - lon2) * 111 * KX, (lat1 - lat2) * 111)
 
-prov = [[None] * COLS for _ in range(ROWS)]
+
+kuni = [[None] * COLS for _ in range(ROWS)]
 lonlat = [[None] * COLS for _ in range(ROWS)]
 for r in range(ROWS):
     for c in range(COLS):
@@ -180,7 +238,6 @@ for r in range(ROWS):
         gy = GY1 - (r + 0.5) * CELL
         lon, lat = to_lonlat(gx, gy)
         lonlat[r][c] = (lon, lat)
-        # マスの中心と、その周りの 4 点のうち多数決で陸かどうかを決める
         votes = {}
         for dx, dy in ((0, 0), (0.3, 0.3), (-0.3, 0.3), (0.3, -0.3), (-0.3, -0.3)):
             lo, la = to_lonlat(gx + dx * CELL, gy + dy * CELL)
@@ -188,9 +245,9 @@ for r in range(ROWS):
             votes[pid] = votes.get(pid, 0) + 1
         pid = max(votes, key=votes.get)
         if pid:
-            prov[r][c] = province_of(pid, lon, lat)
+            kuni[r][c] = kuni_of(pid, lon, lat)
 
-# 小さすぎる島（つながった陸が 3 マス未満）は消す
+
 def neighbors(r, c):
     for dr in (-1, 0, 1):
         for dc in (-1, 0, 1):
@@ -199,32 +256,116 @@ def neighbors(r, c):
                 if 0 <= rr < ROWS and 0 <= cc < COLS:
                     yield rr, cc
 
+
+# 小さすぎる島（つながった陸が 3 マス未満）は消す
 seen = set()
 for r in range(ROWS):
     for c in range(COLS):
-        if prov[r][c] and (r, c) not in seen:
+        if kuni[r][c] and (r, c) not in seen:
             comp = [(r, c)]
             seen.add((r, c))
             i = 0
             while i < len(comp):
                 for rr, cc in neighbors(*comp[i]):
-                    if prov[rr][cc] and (rr, cc) not in seen:
+                    if kuni[rr][cc] and (rr, cc) not in seen:
                         seen.add((rr, cc))
                         comp.append((rr, cc))
                 i += 1
             if len(comp) < 3:
                 for rr, cc in comp:
-                    prov[rr][cc] = None
+                    kuni[rr][cc] = None
 
 # 陸のある範囲だけ残す（周りに 2 マスの海）
-rows_with = [r for r in range(ROWS) if any(prov[r])]
-cols_with = [c for c in range(COLS) if any(prov[r][c] for r in range(ROWS))]
+rows_with = [r for r in range(ROWS) if any(kuni[r])]
+cols_with = [c for c in range(COLS) if any(kuni[r][c] for r in range(ROWS))]
 r0, r1 = max(0, rows_with[0] - 2), min(ROWS - 1, rows_with[-1] + 2)
 c0, c1 = max(0, cols_with[0] - 2), min(COLS - 1, cols_with[-1] + 2)
-prov = [row[c0:c1 + 1] for row in prov[r0:r1 + 1]]
+kuni = [row[c0:c1 + 1] for row in kuni[r0:r1 + 1]]
 lonlat = [row[c0:c1 + 1] for row in lonlat[r0:r1 + 1]]
-ROWS = len(prov)
-COLS = len(prov[0])
+ROWS = len(kuni)
+COLS = len(kuni[0])
+
+# ------------------------------------------------------------------ 城と領地
+
+castle_cell = {}
+for cid, name, k, lon, lat in CASTLES:
+    best = None
+    for r in range(ROWS):
+        for c in range(COLS):
+            if kuni[r][c] != k:
+                continue
+            d = km(lon, lat, *lonlat[r][c])
+            if best is None or d < best[0]:
+                best = (d, c, r)
+    if best is None:
+        raise SystemExit(f'{name}（{k}）のある国にマスがない')
+    castle_cell[cid] = (best[1], best[2])
+
+# 同じ国の中で、いちばん近い城の領地にする（マス目上の距離）
+owner = [[None] * COLS for _ in range(ROWS)]
+by_kuni = {}
+for cid, name, k, lon, lat in CASTLES:
+    by_kuni.setdefault(k, []).append(cid)
+for r in range(ROWS):
+    for c in range(COLS):
+        k = kuni[r][c]
+        if not k:
+            continue
+        if k not in by_kuni:
+            raise SystemExit(f'{k} に城がない')
+        best = None
+        for cid in by_kuni[k]:
+            cc, cr = castle_cell[cid]
+            d = math.hypot(cc - c, cr - r)
+            if best is None or d < best[0]:
+                best = (d, cid)
+        owner[r][c] = best[1]
+
+# 領地が 1 つの城に飛び地なくつながるように、城から届かないマスは近い城に付け替える
+def reachable(cid):
+    cc, cr = castle_cell[cid]
+    seen = {(cr, cc)}
+    stack = [(cr, cc)]
+    while stack:
+        r, c = stack.pop()
+        for rr, ccc in neighbors(r, c):
+            if owner[rr][ccc] == cid and (rr, ccc) not in seen:
+                seen.add((rr, ccc))
+                stack.append((rr, ccc))
+    return seen
+
+
+for _ in range(3):
+    for cid, name, k, lon, lat in CASTLES:
+        ok = reachable(cid)
+        for r in range(ROWS):
+            for c in range(COLS):
+                if owner[r][c] == cid and (r, c) not in ok:
+                    # 隣の領地のうち、いちばん多いものに付け替える
+                    cnt = {}
+                    for rr, cc in neighbors(r, c):
+                        o = owner[rr][cc]
+                        if o and o != cid:
+                            cnt[o] = cnt.get(o, 0) + 1
+                    if cnt:
+                        owner[r][c] = max(cnt, key=cnt.get)
+
+# 隣接
+adj = set()
+for r in range(ROWS):
+    for c in range(COLS):
+        a = owner[r][c]
+        if not a:
+            continue
+        for rr, cc in neighbors(r, c):
+            b = owner[rr][cc]
+            if b and b != a:
+                adj.add(tuple(sorted((a, b))))
+ids = [c[0] for c in CASTLES]
+for a, b in SEA_LINKS:
+    if a not in ids or b not in ids:
+        raise SystemExit(f'海路の城が不明: {a}-{b}')
+links = sorted(adj) + [(a, b, 'sea') for a, b in SEA_LINKS if tuple(sorted((a, b))) not in adj]
 
 # ------------------------------------------------------------------ 地形
 
@@ -240,16 +381,11 @@ PLAINS = [  # (経度, 緯度, 半径 km)
     (130.3, 33.25, 20), (130.5, 31.6, 15), (140.3, 38.3, 15), (141.1, 39.7, 12), (141.4, 40.5, 12),
     (140.1, 35.5, 30), (139.2, 35.3, 12), (131.0, 32.5, 10), (130.9, 33.9, 10),
 ]
-ALPS = [(137.7, 36.0, 60), (138.6, 35.4, 25), (137.4, 35.5, 30)]  # 山ばかりの場所
-
-
-def km(lon1, lat1, lon2, lat2):
-    return math.hypot((lon1 - lon2) * 111 * KX, (lat1 - lat2) * 111)
-
+ALPS = [(137.7, 36.0, 60), (138.6, 35.4, 25), (137.4, 35.5, 30)]
 
 rng = random.Random(1560)
 terrain = [['~'] * COLS for _ in range(ROWS)]
-land = [[prov[r][c] is not None for c in range(COLS)] for r in range(ROWS)]
+land = [[owner[r][c] is not None for c in range(COLS)] for r in range(ROWS)]
 for r in range(ROWS):
     for c in range(COLS):
         if not land[r][c]:
@@ -269,85 +405,61 @@ for r in range(ROWS):
             t = 'm' if u < 0.5 else ('f' if u < 0.85 else '.')
         terrain[r][c] = t
 
-# ざらつきをならす（周りの多数派に寄せる）
-for _ in range(1):
-    new = [row[:] for row in terrain]
-    for r in range(ROWS):
-        for c in range(COLS):
-            if not land[r][c]:
-                continue
-            cnt = {}
-            for rr, cc in neighbors(r, c):
-                if land[rr][cc]:
-                    cnt[terrain[rr][cc]] = cnt.get(terrain[rr][cc], 0) + 1
-            if cnt:
-                top = max(cnt, key=cnt.get)
-                if cnt[top] >= 5:
-                    new[r][c] = top
-    terrain = new
-
-# ------------------------------------------------------------------ 城の位置
-
-CASTLES = {
-    'satsuma': (130.55, 31.6), 'hyuga': (131.35, 32.0), 'higo': (130.7, 32.8), 'hizen': (130.3, 33.25),
-    'chikuzen': (130.45, 33.65), 'bungo': (131.6, 33.24), 'nagato': (131.47, 34.18), 'aki': (132.7, 34.6),
-    'bingo': (133.4, 34.55), 'izumo': (133.2, 35.35), 'hoki': (134.2, 35.5), 'bizen': (133.93, 34.66),
-    'harima': (134.7, 34.85), 'tajima': (134.87, 35.45), 'iyo': (132.78, 33.85), 'tosa': (133.62, 33.6),
-    'sanuki': (134.05, 34.33), 'awa': (134.55, 34.1), 'settsu': (135.5, 34.68), 'yamashiro': (135.75, 35.0),
-    'yamato': (135.8, 34.65), 'kii': (135.17, 34.23), 'minamiomi': (136.1, 35.15), 'kitaomi': (136.27, 35.45),
-    'echizen': (136.3, 36.0), 'ise': (136.5, 34.72), 'mino': (136.78, 35.43), 'owari': (136.85, 35.22),
-    'mikawa': (137.17, 34.95), 'totomi': (137.73, 34.71), 'suruga': (138.38, 34.97), 'kai': (138.57, 35.67),
-    'shinano': (137.97, 36.23), 'etchu': (137.21, 36.7), 'echigo': (138.23, 37.15), 'kozuke': (139.07, 36.39),
-    'musashi': (139.48, 35.92), 'sagami': (139.16, 35.25), 'boso': (140.1, 35.3), 'shimotsuke': (139.88, 36.56),
-    'hitachi': (140.53, 36.54), 'dewa': (140.1, 37.92), 'mutsu': (140.87, 38.27), 'oshu': (141.25, 40.4),
-}
-castles = {}
-for pname, (lon, lat) in CASTLES.items():
-    best = None
-    for r in range(ROWS):
-        for c in range(COLS):
-            if prov[r][c] != pname:
-                continue
-            d = km(lon, lat, *lonlat[r][c])
-            if best is None or d < best[0]:
-                best = (d, c, r)
-    if best is None:
-        raise SystemExit(f'{pname} にマスがない')
-    castles[pname] = [best[1], best[2]]
-    terrain[best[2]][best[1]] = '.'
+new = [row[:] for row in terrain]
+for r in range(ROWS):
+    for c in range(COLS):
+        if not land[r][c]:
+            continue
+        cnt = {}
+        for rr, cc in neighbors(r, c):
+            if land[rr][cc]:
+                cnt[terrain[rr][cc]] = cnt.get(terrain[rr][cc], 0) + 1
+        if cnt:
+            top = max(cnt, key=cnt.get)
+            if cnt[top] >= 5:
+                new[r][c] = top
+terrain = new
+for cid, (c, r) in castle_cell.items():
+    terrain[r][c] = '.'
 
 # ------------------------------------------------------------------ 出力
 
 counts = {}
 for r in range(ROWS):
     for c in range(COLS):
-        if prov[r][c]:
-            counts[prov[r][c]] = counts.get(prov[r][c], 0) + 1
-missing = [p for p in PROVINCE_ORDER if p not in counts]
-if missing:
-    raise SystemExit(f'マスのない国: {missing}')
+        if owner[r][c]:
+            counts[owner[r][c]] = counts.get(owner[r][c], 0) + 1
+tiny = [(cid, counts.get(cid, 0)) for cid in ids if counts.get(cid, 0) < 6]
+if tiny:
+    print('マスの少ない城:', tiny, file=sys.stderr)
 
-prov_rows = [''.join('~' if prov[r][c] is None else chr(65 + PIDX[prov[r][c]]) for c in range(COLS)) for r in range(ROWS)]
+idx = {cid: i for i, cid in enumerate(ids)}
+# 領地は 1 マス 2 文字の 16 進数（'~~' は海）
+owner_rows = [''.join('~~' if owner[r][c] is None else f'{idx[owner[r][c]]:02x}' for c in range(COLS)) for r in range(ROWS)]
 terr_rows = [''.join(terrain[r]) for r in range(ROWS)]
 
 with open(OUT, 'w', encoding='utf-8') as f:
     f.write('/**\n * マス目の日本地図。tools/build-map.py が都道府県の地形データから作る（手で直さない）。\n')
-    f.write(' *\n *   terrain: 1 行 1 段。~ 海　. 平地　f 森　m 山\n')
-    f.write(' *   province: 同じ並びで、A から順に PROVINCE_ORDER の国。~ は海\n')
-    f.write(' *   castles: 国 id → [列, 段]\n */\n\n')
+    f.write(' *\n *   TERRAIN: 1 行 1 段。~ 海　. 平地　f 森　m 山\n')
+    f.write(' *   PROVINCE: 同じ並びで 1 マス 2 文字。16 進数で CASTLE_INFO の何番目の城の領地か。~~ は海\n')
+    f.write(' *   CASTLE_INFO: [id, 城名, 国, 列, 段, 本城か]\n *   LINKS: 隣り合う城（3 つ目が sea なら海路）\n */\n\n')
     f.write(f'export const COLS = {COLS};\nexport const ROWS = {ROWS};\n\n')
-    f.write('export const PROVINCE_ORDER = [\n  ' + ', '.join(f"'{p}'" for p in PROVINCE_ORDER) + ',\n];\n\n')
+    f.write('export const CASTLE_INFO = [\n')
+    mains = set()
+    for cid, name, k, lon, lat in CASTLES:
+        main = k not in mains
+        mains.add(k)
+        c, r = castle_cell[cid]
+        f.write(f"  ['{cid}', '{name}', '{k}', {c}, {r}, {'true' if main else 'false'}],\n")
+    f.write('];\n\n')
+    f.write('export const LINKS = [\n')
+    for l in links:
+        f.write(f"  [{', '.join(repr(x) for x in l)}],\n".replace("'", "'"))
+    f.write('];\n\n')
     f.write('export const TERRAIN = [\n' + ''.join(f"  '{row}',\n" for row in terr_rows) + '];\n\n')
-    f.write('export const PROVINCE = [\n' + ''.join(f"  '{row}',\n" for row in prov_rows) + '];\n\n')
-    f.write('export const CASTLES = {\n' + ''.join(f"  {p}: [{c}, {r}],\n" for p, (c, r) in castles.items()) + '};\n')
+    f.write('export const PROVINCE = [\n' + ''.join(f"  '{row}',\n" for row in owner_rows) + '];\n')
 
 total = sum(counts.values())
-print(f'{COLS} x {ROWS} マス、陸 {total} マス')
-for p in PROVINCE_ORDER:
-    print(f'  {p:10s} {counts[p]:4d}')
-# 地形の内訳
-tc = {}
-for row in terr_rows:
-    for ch in row:
-        tc[ch] = tc.get(ch, 0) + 1
-print(tc)
+print(f'{COLS} x {ROWS} マス、陸 {total} マス、城 {len(ids)}、隣接 {len(links)}')
+for cid, name, k, lon, lat in CASTLES:
+    print(f'  {cid:12s} {name:8s} {k:4s} {counts.get(cid, 0):4d}')

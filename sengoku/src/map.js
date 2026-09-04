@@ -9,10 +9,12 @@
  * ドラッグでスクロール、ホイールやピンチで拡大縮小できる。
  */
 
-import { PROVINCES } from './data.js';
+import { LINKS, PROVINCES } from './data.js';
 import {
   COLS, ROWS, castleOf, cellBuild, cellsOf, isCastle, provinceAt, terrainAt,
 } from './land.js';
+
+const SEA_ROUTES = LINKS.filter((l) => l[2] === 'sea');
 
 const NEUTRAL = '#8d8f86';
 const NAME = Object.fromEntries(PROVINCES.map((p) => [p.id, p.name]));
@@ -179,6 +181,20 @@ export function createMap(canvas, { onSelect }) {
     }
     ctx.stroke();
 
+    // 海路
+    ctx.setLineDash([s * 0.5, s * 0.5]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = Math.max(1, s * 0.15);
+    ctx.beginPath();
+    for (const [a, b] of SEA_ROUTES) {
+      const [ac, ar] = castleOf(a);
+      const [bc, br] = castleOf(b);
+      ctx.moveTo(ox + (ac + 0.5) * s, oy + (ar + 0.5) * s);
+      ctx.lineTo(ox + (bc + 0.5) * s, oy + (br + 0.5) * s);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     // 選んでいる国・行き先の国のふちどり
     if (view.selected) outline(view.selected, '#ffd75e', Math.max(2, s * 0.25), false);
     for (const pid of targets) outline(pid, '#fff3a8', Math.max(2, s * 0.25), true);
@@ -316,7 +332,9 @@ export function createMap(canvas, { onSelect }) {
       ctx.strokeRect(cx + size * 0.34, cy - size * 0.95, size * 0.32, size * 0.24);
     }
 
-    // 国名と兵数
+    // 城名と兵数（縮小しているときは選んでいる城と行き先だけ）
+    const showLabel = s >= 7 || isTarget || view.selected === pid || mine;
+    if (!showLabel) return;
     const font = Math.max(10, Math.min(15, s * 1.1));
     ctx.font = `700 ${font}px ${FONT}`;
     ctx.textAlign = 'center';
