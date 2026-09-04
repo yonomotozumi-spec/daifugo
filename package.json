@@ -1,15 +1,16 @@
 {
   "name": "daifugo",
   "version": "1.0.0",
-  "description": "ブラウザで遊べる大富豪（大貧民）・テキサスホールデム・釣りゲーム。ビルド不要の素の HTML + ES Modules。",
+  "description": "ブラウザで遊べる大富豪（大貧民）・テキサスホールデム・釣りゲーム・戦国シミュレーション。ビルド不要の素の HTML + ES Modules。",
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node --test test/*.test.js poker/test/*.test.js fishing/test/*.test.js",
+    "test": "node --test test/*.test.js poker/test/*.test.js fishing/test/*.test.js sengoku/test/*.test.js",
     "start": "npx --yes http-server . -p 8080 -c-1",
     "test:browser": "node test/browser.smoke.mjs",
     "test:browser:fishing": "node fishing/test/browser.smoke.mjs",
-    "test:mobile": "node fishing/test/mobile.smoke.mjs"
+    "test:mobile": "node fishing/test/mobile.smoke.mjs",
+    "test:browser:sengoku": "node sengoku/test/browser.smoke.mjs"
   },
   "keywords": [
     "daifugo",
@@ -19,7 +20,9 @@
     "fishing",
     "pwa",
     "poker",
-    "texas-holdem"
+    "texas-holdem",
+    "sengoku",
+    "strategy"
   ],
   "license": "MIT"
 }

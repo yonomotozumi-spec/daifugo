@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>戦国 天下統一 — ブラウザで遊べる歴史シミュレーション</title>
+<meta name="description" content="1560年の日本で大名を選び、内政・合戦・外交で天下統一を目指す歴史シミュレーションゲーム。">
+<link rel="stylesheet" href="src/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🏯</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>戦国 天下統一</h1>
+
+  <div class="status" id="status">
+    <span class="badge badge-daimyo" id="st-daimyo"><i class="dot" id="st-dot"></i><span id="st-name">—</span></span>
+    <span class="badge" id="st-date">1560年4月</span>
+    <span class="badge badge-gold" title="金：開墾・商業・築城・徴兵・外交に使う">金 <b id="st-gold">0</b></span>
+    <span class="badge badge-rice" title="米：兵の食料。出陣・施しにも使う">米 <b id="st-rice">0</b></span>
+    <span class="badge" id="st-power" title="持っている国の数と兵の合計">国 0 ／ 兵 0</span>
+  </div>
+
+  <div class="topbar-actions">
+    <button type="button" class="ghost" id="btn-ranking" aria-haspopup="dialog">勢力</button>
+    <button type="button" class="ghost" id="btn-help" aria-haspopup="dialog">遊びかた</button>
+    <button type="button" class="ghost" id="btn-menu" aria-haspopup="dialog">メニュー</button>
+    <button type="button" class="primary" id="btn-end">月を終える</button>
+  </div>
+</header>
+
+<main class="stage">
+  <div class="map-wrap" id="map-wrap">
+    <div class="map-scroll" id="map-scroll">
+      <svg id="map" viewBox="0 0 920 640" role="img" aria-label="日本地図"></svg>
+    </div>
+    <div class="map-hint" id="map-hint" role="status" hidden></div>
+    <div class="map-legend" id="map-legend"></div>
+    <div class="map-zoom">
+      <button type="button" class="ghost" id="zoom-in" title="地図を拡大" aria-label="地図を拡大">＋</button>
+      <button type="button" class="ghost" id="zoom-out" title="地図を縮小" aria-label="地図を縮小">－</button>
+    </div>
+  </div>
+
+  <aside class="panel" id="panel">
+    <section class="province-panel" id="province-panel"></section>
+    <section class="log-wrap">
+      <h2>記録</h2>
+      <ol class="log" id="log" aria-live="polite"></ol>
+    </section>
+  </aside>
+</main>
+
+<p class="toast" id="toast" role="status" hidden></p>
+
+<!-- 大名を選ぶ -->
+<dialog id="dlg-start" class="wide">
+  <h2>大名を選ぶ</h2>
+  <p class="hint">1560 年、桶狭間の戦いの年。どの家で天下を目指しますか？ ★が多いほど難しい家です。</p>
+  <div class="daimyo-grid" id="daimyo-grid"></div>
+  <menu>
+    <button type="button" class="ghost hidden" id="btn-continue">前回の続きから</button>
+    <a class="topbar-link" href="../">🃏 大富豪</a>
+    <a class="topbar-link" href="../poker/">♠ ポーカー</a>
+    <a class="topbar-link" href="../fishing/">🎣 釣り</a>
+  </menu>
+</dialog>
+
+<!-- 兵の数を決める -->
+<dialog id="dlg-troops">
+  <h2 id="troops-title">出陣</h2>
+  <p id="troops-text"></p>
+  <div class="troops-row">
+    <input type="range" id="troops-range" min="0" max="1000" step="100" value="0">
+    <output id="troops-value">0</output>
+  </div>
+  <p class="hint" id="troops-note"></p>
+  <menu>
+    <button type="button" class="ghost" id="troops-cancel">やめる</button>
+    <button type="button" class="primary" id="troops-ok">決定</button>
+  </menu>
+</dialog>
+
+<!-- 外交の相手 -->
+<dialog id="dlg-diplomacy">
+  <h2 id="diplomacy-title">親善</h2>
+  <p class="hint" id="diplomacy-text"></p>
+  <ul class="diplomacy-list" id="diplomacy-list"></ul>
+  <menu>
+    <button type="button" class="ghost" id="diplomacy-cancel">やめる</button>
+  </menu>
+</dialog>
+
+<!-- 合戦 -->
+<dialog id="dlg-battle" class="wide">
+  <h2 id="battle-title">合戦</h2>
+  <div class="battle-sides">
+    <div class="battle-side" id="battle-att"><span class="side-label">攻め手</span><b class="side-name"></b><span class="side-soldiers"></span><div class="meter"><i></i></div></div>
+    <div class="battle-vs">対</div>
+    <div class="battle-side" id="battle-def"><span class="side-label">守り手</span><b class="side-name"></b><span class="side-soldiers"></span><div class="meter"><i></i></div></div>
+  </div>
+  <ol class="battle-log" id="battle-log"></ol>
+  <menu>
+    <button type="button" class="ghost" id="battle-retreat">退却する</button>
+    <button type="button" class="primary" id="battle-attack">攻撃する</button>
+    <button type="button" class="primary hidden" id="battle-close">閉じる</button>
+  </menu>
+</dialog>
+
+<!-- 捕らえた武将 -->
+<dialog id="dlg-capture">
+  <h2>武将を捕らえた</h2>
+  <p id="capture-text"></p>
+  <p class="hint" id="capture-note"></p>
+  <menu>
+    <button type="button" class="ghost" id="capture-release">解放する</button>
+    <button type="button" class="primary" id="capture-recruit">家臣に誘う</button>
+  </menu>
+</dialog>
+
+<!-- 月報 -->
+<dialog id="dlg-report">
+  <h2 id="report-title">月報</h2>
+  <ol class="report-list" id="report-list"></ol>
+  <menu>
+    <button type="button" class="primary" id="report-close">閉じる</button>
+  </menu>
+</dialog>
+
+<!-- 月を終える確認 -->
+<dialog id="dlg-confirm-end">
+  <h2>月を終えますか？</h2>
+  <p id="confirm-end-text"></p>
+  <menu>
+    <button type="button" class="ghost" id="confirm-end-cancel">まだ動かす</button>
+    <button type="button" class="primary" id="confirm-end-ok">月を終える</button>
+  </menu>
+</dialog>
+
+<!-- 勢力一覧 -->
+<dialog id="dlg-ranking" class="wide">
+  <h2>勢力一覧</h2>
+  <div class="table-wrap">
+    <table class="ranking" id="ranking-table">
+      <thead><tr><th>家</th><th>当主</th><th>国</th><th>兵</th><th>武将</th><th>友好</th><th>同盟</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <menu>
+    <button type="button" class="primary" id="ranking-close">閉じる</button>
+  </menu>
+</dialog>
+
+<!-- 遊びかた -->
+<dialog id="dlg-help" class="wide">
+  <h2>遊びかた</h2>
+  <div class="help">
+    <p><b>目標</b>：ほかの大名家をすべて滅ぼして天下を統一すること。自分の国をすべて失うと負けです。</p>
+    <p><b>1 か月に 1 回、武将ひとりにつき 1 つ命令</b>できます。地図で自分の国（濃い色）をクリックすると、そこにいる武将と命令が出ます。全員に命令したら右上の <b>月を終える</b> を押してください。</p>
+    <table class="help-table">
+      <tr><th>🌾 開墾</th><td>農業を上げる。秋（9 月）の米の収穫が増える</td></tr>
+      <tr><th>🏪 商業</th><td>商業を上げる。毎月の金の収入が増える</td></tr>
+      <tr><th>🏯 築城</th><td>城の防御を上げる。守るときに強い</td></tr>
+      <tr><th>🪖 徴兵</th><td>金で兵を集める。統率の高い武将ほど多く集まる。民忠が少し下がる</td></tr>
+      <tr><th>⚔️ 訓練</th><td>兵の訓練度を上げる。金はかからない</td></tr>
+      <tr><th>🍙 施し</th><td>米を配って民忠を上げる。民忠が低いと一揆が起きる</td></tr>
+      <tr><th>🐎 移動</th><td>隣の自分の国へ武将と兵を移す</td></tr>
+      <tr><th>🔥 出陣</th><td>隣の他国へ攻め込む。兵 100 人につき米 5 が必要</td></tr>
+      <tr><th>🎁 親善</th><td>他の大名に贈り物をして友好を上げる</td></tr>
+      <tr><th>🤝 同盟</th><td>友好 60 以上の大名と同盟を結ぶ（24 か月）。同盟中は互いに攻められない</td></tr>
+    </table>
+    <p><b>合戦</b>は 1 回ずつ「攻撃」を選んで進めます。城の兵を 0 にすれば落城。不利なら「退却」で兵を守れます。10 合戦で落とせなければ引き上げになります。攻める側は、守り手より <b>1.5 倍以上</b>の戦力がほしいところです（城の防御ぶん守り手が有利）。</p>
+    <p><b>武将の能力</b>：<b>統率</b>は戦と徴兵、<b>武勇</b>は戦、<b>政治</b>は内政と外交に効きます。落城で捕らえた武将は家臣に誘えます（当主はまず断ります）。</p>
+    <p><b>金と米</b>：金は毎月、商業に応じて入ります。米は 9 月に農業に応じて収穫され、毎月兵が食べます。米が尽きると兵が逃げ出すので、兵を増やしたら開墾も忘れずに。</p>
+    <p><b>灰色の国</b>は大名のいない空白地。国人衆が守っていますが、大名の国より落としやすいです。</p>
+    <p class="hint">進み具合は自動でブラウザに保存されます。メニューから新しいゲームを始められます。</p>
+  </div>
+  <menu>
+    <button type="button" class="primary" id="help-close">閉じる</button>
+  </menu>
+</dialog>
+
+<!-- メニュー -->
+<dialog id="dlg-menu">
+  <h2>メニュー</h2>
+  <p class="hint">進み具合は自動で保存されています。</p>
+  <menu class="vertical">
+    <button type="button" class="ghost" id="menu-new">新しいゲームを始める</button>
+    <button type="button" class="ghost" id="menu-close">閉じる</button>
+  </menu>
+</dialog>
+
+<!-- 終了 -->
+<dialog id="dlg-end">
+  <h2 id="end-title">天下統一</h2>
+  <p id="end-text"></p>
+  <menu>
+    <button type="button" class="primary" id="end-again">もう一度あそぶ</button>
+  </menu>
+</dialog>
+
+<script type="module" src="src/ui.js"></script>
+</body>
+</html>
