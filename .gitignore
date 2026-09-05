@@ -2,4 +2,7 @@ node_modules/
 package-lock.json
 test/screenshots/
 fishing/test/screenshots/
+sengoku/test/screenshots/
 .DS_Store
+__pycache__/
+sengoku/dist/
