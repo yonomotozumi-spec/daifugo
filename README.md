@@ -427,6 +427,7 @@ sengoku/test/browser.smoke.mjs 実ブラウザでの通し確認（Playwright、
 ```
 npm test                       # 上の 4 つのゲームのテストをまとめて実行
 npm run test:browser:sengoku   # 実ブラウザで大名を選び、内政 → 出陣 → 月送り → 続きから、まで通す（要 Playwright）
+node sengoku/tools/bundle.mjs  # 1 ファイル版 sengoku/dist/sengoku.html を作る（サーバーなしで開ける・配布用）
 ```
 
 ## ライセンス
