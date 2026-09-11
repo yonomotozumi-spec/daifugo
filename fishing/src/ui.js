@@ -6,6 +6,7 @@ import {
   createPlayer, equip, equippedLure, equippedRod, fishOfSpot, gearEffects, hookWindow,
   normalizePlayer, owns, pickFish, recordCatch, rollEvent, sell, sizeLabel,
   shortMoney, sizeTitle, spotById, tickEvent, timeAt, useCharm, weatherById, yen,
+  MAX_POWER, isHardSpot, spotHazard, spotLocked,
 } from './engine.js';
 import { CAST_TIME, LAND_TIME, Scene } from './scene.js';
 
@@ -110,6 +111,8 @@ function renderHud() {
   const spot = spotById(player.spot);
   const time = timeAt(player.timeIndex);
   $('badge-spot').textContent = spot.name;
+  $('badge-spot').dataset.hard = String(spot.hard ?? 0);
+  $('badge-spot').title = isHardSpot(spot) ? `難所（${'🔥'.repeat(spot.hard)}）：${spot.note}` : spot.note;
   $('badge-time').textContent = time.label;
   $('badge-time').dataset.time = time.id;
   const weather = weatherById(player.weather);
@@ -147,11 +150,23 @@ function renderEvent() {
 }
 
 /**
+ * 難所の鍵になっている魚を釣ったら、その場で知らせる。
+ * ショップを開かないと気づけないのでは、せっかくのヌシがもったいない。
+ */
+function announceUnlock(fish) {
+  const opened = SPOTS.find((s) => s.require === fish.id);
+  if (!opened) return;
+  announcedSpot = null;
+  log(`🔓 ${opened.name}への道が開いた！ ${yen(opened.price)}で行ける`, 'legendary');
+}
+
+/**
  * 新しい釣り場に手が届いたら知らせる。
  * ショップの奥に隠れていると、池だけで終わってしまうので。
  */
 function checkNewSpot() {
-  const next = SPOTS.find((s) => !owns(player, 'spot', s.id) && player.money >= s.price);
+  const next = SPOTS.find((s) => !owns(player, 'spot', s.id)
+    && player.money >= s.price && !spotLocked(player, s));
   $('btn-shop').classList.toggle('has-new', Boolean(next));
   if (!next || announcedSpot === next.id) return;
   announcedSpot = next.id;
@@ -215,6 +230,7 @@ function cast() {
       weather: weatherById(player.weather),
       event: happening?.event,
       charm: charmState?.charm.effect,
+      spot: spotById(player.spot),
     });
     timer = setTimeout(startBite, delay * 1000);
   }, CAST_TIME * 1000);
@@ -258,6 +274,7 @@ function hook() {
     gear: gearEffects(player),
     weather: weatherById(player.weather),
     charm: charmState?.charm.effect,
+    spot: spotById(player.spot),
   });
   setMode(MODE.fight);
   scene.hook(fight);
@@ -268,7 +285,9 @@ function hook() {
     buzz([40, 60, 40, 60, 90]);
     scene.shake = 14;
     setStatus(`👑 ${pending.fish.name} — ${pending.fish.title}！`, 'alert');
-    setHint('半分まで寄せると暴れ出す。焦らずバーに入れ続ける');
+    setHint(fight.rages.length > 1
+      ? '二度も本気を出してくる。長い勝負になる'
+      : '半分まで寄せると暴れ出す。焦らずバーに入れ続ける');
     log(`👑 ${pending.fish.name}（${pending.fish.title}）が掛かった！`, 'legendary');
     return;
   }
@@ -276,7 +295,9 @@ function hook() {
   buzz(20);
   const heavy = pending.fish.power > rod.power;
   setStatus(heavy ? '重い！ かなりの大物だ' : '掛かった！ 巻き上げろ！', heavy ? 'alert' : '');
-  setHint(heavy ? '竿が負けている。巻きっぱなしはライン切れ' : '魚を緑のバーに入れ続ける');
+  if (heavy) setHint('竿が負けている。巻きっぱなしはライン切れ');
+  else if (fight.drift) setHint('流れが強い。手を止めると押し戻される');
+  else setHint('魚を緑のバーに入れ続ける');
 }
 
 function finishFight(phase) {
@@ -291,6 +312,7 @@ function finishFight(phase) {
     buzz([25, 45, 90]);
     const isNew = recordCatch(player, result);
     result.isNew = isNew;
+    announceUnlock(result.fish);
     save();
     setStatus('釣り上げた！', 'good');
     setHint('');
@@ -450,8 +472,11 @@ function shopItems(kind) {
 
 function itemStats(kind, item) {
   if (kind === 'rod') {
+    // 星は 5 つまで。それより強い竿は「★★★★★+2」のように足して出す
+    const stars = '★'.repeat(Math.min(5, item.power))
+      + (item.power > 5 ? `+${item.power - 5}` : '☆'.repeat(5 - item.power));
     return [
-      ['パワー', '★'.repeat(item.power) + '☆'.repeat(5 - item.power)],
+      ['パワー', stars],
       ['寄せ速度', `${Math.round(item.reel * 100)}`],
       ['バーの広さ', `${Math.round(item.barH * 100)}`],
       ['ライン強度', `${item.line.toFixed(1)}`],
@@ -478,11 +503,21 @@ function itemStats(kind, item) {
 
   const all = fishOfSpot(item.id);
   const found = all.filter((f) => player.records[f.id]).length;
-  return [
+  const rows = [
     ['魚の種類', `${all.length}種`],
     ['発見済み', `${found}種`],
     ['最高額の魚', yen(Math.max(...all.map((f) => f.value)) * 2)],
   ];
+  if (isHardSpot(item)) {
+    const h = spotHazard(item);
+    rows.push(
+      ['難度', '🔥'.repeat(item.hard)],
+      ['ラインの負荷', `+${Math.round(h.stress * 100)}%`],
+      ['流れの強さ', h.drift >= 0.05 ? '激流' : h.drift >= 0.03 ? '強い' : 'ある'],
+      ['魚の重さ', `×${h.tough.toFixed(1)}`],
+    );
+  }
+  return rows;
 }
 
 /** 道具の効果を「○○ +12%」の形に直す。 */
@@ -497,6 +532,8 @@ const EFFECT_LABELS = {
   rarityBonus: ['レア度アップ', (v) => `+${Math.round(v * 100)}%`],
   junkCut: ['ゴミ回避', (v) => `+${Math.round(v * 100)}%`],
   line: ['ライン強度', (v) => `+${v.toFixed(1)}`],
+  driftCut: ['流れへの踏ん張り', (v) => `+${Math.round(v * 1000)}`],
+  calm: ['難所の荒れ', () => 'おさまる'],
   reel: ['寄せ速度', (v) => `+${Math.round(v * 100)}`],
   barH: ['バーの広さ', (v) => `+${Math.round(v * 100)}`],
 };
@@ -537,12 +574,16 @@ function renderShop() {
     }
     const has = owns(player, shopKind, item.id);
     const equipped = player[equipKey] === item.id;
+    // 難所は、ひとつ前のヌシを釣るまで鍵がかかっている
+    const lock = shopKind === 'spot' && !has ? spotLocked(player, item) : null;
     const card = document.createElement('article');
-    card.className = `shop-item${equipped ? ' equipped' : ''}${has ? ' owned' : ''}`;
+    card.className = `shop-item${equipped ? ' equipped' : ''}${has ? ' owned' : ''}`
+      + `${lock ? ' locked' : ''}${isHardSpot(item) ? ' hard' : ''}`;
 
     const head = document.createElement('div');
     head.className = 'shop-item-head';
-    head.innerHTML = `<h3>${item.emoji ? `${item.emoji} ` : ''}${item.name}</h3>`;
+    const mark = isHardSpot(item) ? `<span class="hard-mark">${'🔥'.repeat(item.hard)}</span>` : '';
+    head.innerHTML = `<h3>${item.emoji ? `${item.emoji} ` : ''}${item.name}${mark}</h3>`;
     const price = document.createElement('span');
     price.className = 'shop-price';
     price.textContent = has ? '購入済み' : yen(item.price);
@@ -551,7 +592,9 @@ function renderShop() {
 
     const note = document.createElement('p');
     note.className = 'shop-note';
-    note.textContent = item.note;
+    note.textContent = lock
+      ? `🔒 ${spotById(lock.spot).name}のヌシ「${lock.name}」を釣ると開く`
+      : item.note;
 
     const stats = document.createElement('dl');
     stats.className = 'shop-stats';
@@ -563,13 +606,15 @@ function renderShop() {
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = has ? 'ghost' : 'primary';
+    btn.className = has || lock ? 'ghost' : 'primary';
     const equipLabel = shopKind === 'spot' ? '移動する' : '装備する';
     // 道具は付け替えがないので、持っていれば「使用中」で固定
     btn.textContent = shopKind === 'gear'
       ? (has ? '使用中' : '買う')
       : equipped ? (shopKind === 'spot' ? '釣り中' : '装備中') : has ? equipLabel : '買う';
-    btn.disabled = (shopKind === 'gear' && has) || equipped || (!has && player.money < item.price);
+    if (lock) btn.textContent = '🔒 まだ行けない';
+    btn.disabled = Boolean(lock) || (shopKind === 'gear' && has) || equipped
+      || (!has && player.money < item.price);
     btn.addEventListener('click', () => {
       if (has) {
         if (shopKind === 'gear') return;

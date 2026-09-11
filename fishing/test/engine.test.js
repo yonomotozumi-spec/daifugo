@@ -9,6 +9,7 @@ import {
   sell, sizeTitle, timeAt, weightedPick,
   EVENTS, WEATHERS, WEATHER_SPAN, advanceWeather, rollEvent, tickEvent, weatherById,
   CHARMS, buyCharm, charmById, charmCount, shortMoney, useCharm,
+  MAX_POWER, isHardSpot, spotById, spotHazard, spotLocked,
 } from '../src/engine.js';
 
 const lure = (id) => LURES.find((l) => l.id === id);
@@ -29,7 +30,7 @@ test('魚のデータが壊れていない', () => {
     assert.ok(SPOTS.some((s) => s.id === f.spot), `${f.name}: 未知の釣り場 ${f.spot}`);
     assert.ok(f.weight[0] > 0 && f.weight[1] > f.weight[0], `${f.name}: 重さの範囲がおかしい`);
     assert.ok(f.length[0] > 0 && f.length[1] > f.length[0], `${f.name}: 長さの範囲がおかしい`);
-    assert.ok(f.power >= 1 && f.power <= 5, `${f.name}: パワーが範囲外`);
+    assert.ok(f.power >= 1 && f.power <= MAX_POWER, `${f.name}: パワーが範囲外`);
     assert.ok(f.value > 0 && f.emoji && f.name, `${f.name}: 表示用の値が欠けている`);
   }
 });
@@ -395,14 +396,14 @@ test('池だけで遊んでいても、すぐ次の釣り場に行ける', () =>
   assert.ok(p.money >= river.price, `15回釣っても渓流に行けない（${p.money}円 / ${river.price}円）`);
 });
 
-test('釣り場は 8 か所あって、順番に値段が上がる', () => {
-  assert.equal(SPOTS.length, 8);
+test('釣り場は 11 か所あって、順番に値段が上がる', () => {
+  assert.equal(SPOTS.length, 11);
   assert.deepEqual(SPOTS.map((s) => s.id),
-    ['pond', 'river', 'harbor', 'ice', 'sea', 'island', 'cave', 'deep']);
+    ['pond', 'river', 'harbor', 'ice', 'sea', 'island', 'cave', 'deep', 'ruin', 'crater', 'abyss']);
 });
 
-test('魚は全部で 75 種以上いて、どの釣り場にも 7 種以上いる', () => {
-  assert.ok(FISH.length >= 75, `魚が少ない（${FISH.length} 種）`);
+test('魚は全部で 105 種以上いて、どの釣り場にも 7 種以上いる', () => {
+  assert.ok(FISH.length >= 105, `魚が少ない（${FISH.length} 種）`);
   for (const spot of SPOTS) {
     const list = fishOfSpot(spot.id);
     assert.ok(list.length >= 7, `${spot.name}の魚が少ない（${list.length} 種）`);
@@ -878,4 +879,241 @@ test('所持金は狭い画面向けに桁を詰める', () => {
   assert.equal(shortMoney(123456789, true), '1.23億');
   // 広い画面ではそのまま
   assert.equal(shortMoney(1234567, false), '1,234,567');
+});
+
+// ------------------------------------------------------------------ 難所（高難度の釣り場）
+
+const HARD_IDS = ['ruin', 'crater', 'abyss'];
+const hardSpots = () => HARD_IDS.map((id) => spotById(id));
+
+test('難所は 3 か所あって、ひとつ前のヌシが鍵になっている', () => {
+  const hard = SPOTS.filter(isHardSpot);
+  assert.deepEqual(hard.map((s) => s.id), HARD_IDS);
+  const keys = ['coelacanth', 'wadatsumi', 'enrin'];
+  hard.forEach((spot, i) => {
+    assert.equal(spot.require, keys[i], `${spot.name}の鍵がちがう`);
+    const key = fishById(spot.require);
+    assert.ok(key?.boss, `${spot.name}の鍵がヌシではない`);
+    // ひとつ前の釣り場のヌシであること
+    const prev = SPOTS[SPOTS.indexOf(spot) - 1];
+    assert.equal(key.spot, prev.id, `${spot.name}の鍵が ${prev.name} のヌシではない`);
+  });
+});
+
+test('難所は奥ほど荒れていて、ふつうの釣り場には補正がない', () => {
+  for (const spot of SPOTS.filter((s) => !isHardSpot(s))) {
+    const h = spotHazard(spot);
+    assert.deepEqual(h, { stress: 0, drift: 0, fishSpeed: 1, biteBonus: 0, tough: 1 },
+      `${spot.name}に補正がついている`);
+  }
+  const hard = hardSpots().map(spotHazard);
+  for (let i = 1; i < hard.length; i++) {
+    assert.ok(hard[i].stress > hard[i - 1].stress, '奥の難所のほうが負荷が軽い');
+    assert.ok(hard[i].drift > hard[i - 1].drift, '奥の難所のほうが流れがゆるい');
+    assert.ok(hard[i].fishSpeed > hard[i - 1].fishSpeed, '奥の難所の魚のほうが遅い');
+    assert.ok(hard[i].biteBonus < hard[i - 1].biteBonus, '奥の難所のほうがアタリが早い');
+    assert.ok(hard[i].tough > hard[i - 1].tough, '奥の難所の魚のほうが軽い');
+  }
+});
+
+test('難所はヌシを釣るまで買えない', () => {
+  const p = createPlayer({ money: 10000000 });
+  const ruin = spotById('ruin');
+  assert.ok(spotLocked(p, ruin), 'まだ開いていないはずの難所が開いている');
+  const locked = buy(p, 'spot', 'ruin');
+  assert.equal(locked.ok, false);
+  assert.match(locked.error, /シーラカンス/);
+  assert.equal(p.money, 10000000, '買えていないのにお金が減った');
+
+  // 深海のヌシを釣ると開く
+  recordCatch(p, { fish: fishById('coelacanth'), weightKg: 50, lengthCm: 150, price: 400000 });
+  assert.equal(spotLocked(p, ruin), null);
+  const opened = buy(p, 'spot', 'ruin');
+  assert.equal(opened.ok, true, opened.error);
+  assert.equal(p.spot, 'ruin');
+
+  // その先はまだ開かない
+  assert.ok(spotLocked(p, spotById('crater')), '海底神殿のヌシなしで火口湖が開いた');
+});
+
+test('鍵になる魚を釣っていないと、難所は順番に開く', () => {
+  const p = createPlayer({ money: 99999999 });
+  for (const spot of hardSpots()) {
+    assert.equal(buy(p, 'spot', spot.id).ok, false, `${spot.name}が先に買えてしまう`);
+    recordCatch(p, { fish: fishById(spot.require), weightKg: 100, lengthCm: 300, price: 1 });
+    assert.equal(buy(p, 'spot', spot.id).ok, true, `${spot.name}が開かない`);
+  }
+  assert.equal(p.spots.length, SPOTS.filter((s) => !s.price || true).length - 7);
+});
+
+test('難所ではラインへの負荷が増え、潮に流される', () => {
+  const make = (spotId) => new Fight({
+    fish: fishById('funa'), rod: rod('mythrod'), sizeRatio: 0.5, rng: mulberry32(9),
+    spot: spotId ? spotById(spotId) : null,
+  });
+  const pond = make(null);
+  const abyss = make('abyss');
+  assert.equal(pond.drift, 0);
+  assert.ok(abyss.drift > 0, '奈落なのに流されない');
+  assert.ok(abyss.stress > pond.stress, '奈落なのに負荷が同じ');
+  assert.ok(abyss.speed > pond.speed, '奈落なのに魚が速くない');
+  assert.equal(abyss.hard, 3);
+});
+
+/** 動かない魚を相手に、同じ操作で寄せたときの進み具合を比べる。 */
+function reelProgress(spotId, extra = {}) {
+  const still = { ...fishById('funa'), speed: 0, escape: 0, power: 1 };
+  const fight = new Fight({
+    fish: still, rod: rod('nobe'), sizeRatio: 0.5, rng: () => 0.5,
+    spot: spotId ? spotById(spotId) : null, ...extra,
+  });
+  for (let i = 0; i < 60; i++) fight.update(1 / 60, fight.barY > fight.fishY);
+  return fight.progress;
+}
+
+test('潮に流される難所では、同じ操作でも寄せが進まない', () => {
+  const pond = reelProgress(null);
+  const ruin = reelProgress('ruin');
+  const abyss = reelProgress('abyss');
+  assert.ok(ruin < pond, `海底神殿のほうが楽になっている（${ruin} / ${pond}）`);
+  assert.ok(abyss < ruin, `奈落のほうが楽になっている（${abyss} / ${ruin}）`);
+});
+
+test('潮止めアンカーと凪の札は、難所の流れを抑える', () => {
+  const bare = reelProgress('abyss');
+  const anchored = reelProgress('abyss', { gear: { ...NO_GEAR, driftCut: 0.03 } });
+  const calmed = reelProgress('abyss', { charm: charmById('calm').effect });
+  assert.ok(anchored > bare, 'アンカーが効いていない');
+  assert.ok(calmed > anchored, '凪の札がアンカーより弱い');
+  // 荒れはおさまるが、魚の重さ（寄せにくさ）までは変わらない
+  const calm = new Fight({
+    fish: fishById('narakunushi'), rod: rod('mythrod'), sizeRatio: 0.5, rng: mulberry32(1),
+    spot: spotById('abyss'), charm: charmById('calm').effect,
+  });
+  assert.equal(calm.drift, 0);
+  assert.equal(calm.stress, 1);
+  assert.ok(calm.tough > 1, '凪の札でヌシまで軽くなってしまう');
+});
+
+test('難所のヌシは二段構えで暴れる', () => {
+  for (const spot of hardSpots()) {
+    const boss = fishOfSpot(spot.id).find((f) => f.boss);
+    assert.equal(boss.rages, 2, `${boss.name}が二段構えになっていない`);
+    const fight = new Fight({ fish: boss, rod: rod('mythrod'), sizeRatio: 0.5, rng: mulberry32(11) });
+    let signals = 0;
+    let phase = FIGHT.fighting;
+    for (let i = 0; i < 60 * 120 && phase === FIGHT.fighting; i++) {
+      phase = fight.update(1 / 60, fight.barY > fight.fishY);
+      if (fight.justEnraged) signals++;
+    }
+    assert.equal(phase, FIGHT.caught, `${boss.name}を寄せきれない`);
+    assert.equal(signals, 2, `${boss.name}の暴れ出す合図が ${signals} 回`);
+    assert.equal(fight.rageLevel, 2);
+  }
+});
+
+test('奈落の主は、伝説の竿では上がらず、神竿なら上がる', () => {
+  const boss = fishById('narakunushi');
+  const gear = gearEffects({ gears: GEAR.map((g) => g.id) });   // 道具はすべて持っている前提
+  const rate = (rodId) => {
+    let caught = 0;
+    let snapped = 0;
+    for (let n = 1; n <= 40; n++) {
+      const fight = new Fight({
+        fish: boss, rod: rod(rodId), sizeRatio: 0.55, rng: mulberry32(n * 17),
+        spot: spotById('abyss'), gear,
+      });
+      let phase = FIGHT.fighting;
+      for (let i = 0; i < 60 * 90 && phase === FIGHT.fighting; i++) {
+        phase = fight.update(1 / 60, fight.fishY < fight.barY);
+      }
+      if (phase === FIGHT.caught) caught++;
+      if (phase === FIGHT.snapped) snapped++;
+    }
+    return { caught, snapped };
+  };
+  const legend = rate('legend');
+  const myth = rate('mythrod');
+  assert.equal(legend.caught, 0, `伝説の竿で奈落の主が上がってしまう（${legend.caught} / 40）`);
+  assert.ok(legend.snapped > 20, `伝説の竿でラインが切れない（${legend.snapped} / 40）`);
+  assert.ok(myth.caught > 20, `神竿でも奈落の主がほとんど上がらない（${myth.caught} / 40）`);
+  assert.equal(myth.snapped, 0, `神竿でもラインが切れる（${myth.snapped} / 40）`);
+});
+
+test('難所のヌシとの勝負は長丁場になる', () => {
+  const gear = gearEffects({ gears: GEAR.map((g) => g.id) });
+  const seconds = (spotId, rodId) => {
+    const boss = fishOfSpot(spotId).find((f) => f.boss);
+    let total = 0;
+    let n = 0;
+    for (let i = 1; i <= 40; i++) {
+      const fight = new Fight({
+        fish: boss, rod: rod(rodId), sizeRatio: 0.55, rng: mulberry32(i * 17),
+        spot: spotById(spotId), gear,
+      });
+      let phase = FIGHT.fighting;
+      for (let k = 0; k < 60 * 90 && phase === FIGHT.fighting; k++) {
+        phase = fight.update(1 / 60, fight.fishY < fight.barY);
+      }
+      if (phase === FIGHT.caught) { total += fight.time; n++; }
+    }
+    return total / n;
+  };
+  const deep = seconds('deep', 'legend');
+  const abyss = seconds('abyss', 'mythrod');
+  assert.ok(abyss > deep * 2, `奈落の主が深海のヌシと変わらない（${abyss.toFixed(1)}秒 / ${deep.toFixed(1)}秒）`);
+  assert.ok(abyss < 40, `長すぎて中だるみする（${abyss.toFixed(1)}秒）`);
+});
+
+test('難所ほどアタリが渋い', () => {
+  const mean = (spotId) => {
+    const rng = mulberry32(77);
+    let total = 0;
+    for (let i = 0; i < 400; i++) {
+      total += biteDelay(rng, { lure: lure('worm'), timeIndex: 1, spot: spotId ? spotById(spotId) : null });
+    }
+    return total / 400;
+  };
+  const pond = mean(null);
+  const ruin = mean('ruin');
+  const abyss = mean('abyss');
+  assert.ok(ruin > pond, `海底神殿のほうがアタリが早い（${ruin} / ${pond}）`);
+  assert.ok(abyss > ruin, `奈落のほうがアタリが早い（${abyss} / ${ruin}）`);
+});
+
+test('凪の札を使うと、難所でもアタリの渋さが消える', () => {
+  const rngA = mulberry32(3);
+  const rngB = mulberry32(3);
+  const opts = { lure: lure('worm'), timeIndex: 1, spot: spotById('abyss') };
+  const hard = biteDelay(rngA, opts);
+  const calm = biteDelay(rngB, { ...opts, charm: charmById('calm').effect });
+  assert.ok(calm < hard, '凪の札でアタリが早くならない');
+});
+
+test('神託の札では伝説しか掛からない', () => {
+  const rng = mulberry32(23);
+  const effect = charmById('oracle').effect;
+  for (const spot of SPOTS) {
+    for (let i = 0; i < 40; i++) {
+      const { fish } = pickFish(spot.id, { rng, rod: rod('mythrod'), lure: lure('worm'), charm: effect });
+      assert.equal(fish.rarity, 'legendary', `${spot.name}で ${fish.name} が出た`);
+    }
+  }
+});
+
+test('新しい竿・ルアー・道具・お札がそろっている', () => {
+  assert.equal(MAX_POWER, 7);
+  assert.deepEqual(RODS.slice(-2).map((r) => r.power), [6, 7]);
+  for (const id of ['phantom', 'kami']) {
+    assert.ok(LURES.some((l) => l.id === id), `ルアー ${id} がない`);
+  }
+  for (const id of ['harness', 'anchor', 'drone']) {
+    assert.ok(gearById(id), `道具 ${id} がない`);
+  }
+  for (const id of ['calm', 'oracle']) {
+    assert.ok(charmById(id), `お札 ${id} がない`);
+  }
+  // 難所の魚に届く竿が必ず存在する
+  const strongest = Math.max(...FISH.map((f) => f.power));
+  assert.ok(MAX_POWER >= strongest, `いちばん強い魚（${strongest}）に届く竿がない`);
 });
