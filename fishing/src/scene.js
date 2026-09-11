@@ -76,6 +76,25 @@ const SPOT_STYLE = {
     depth: 0.68, ground: '#101a28', bank: '#2a3040', ray: 0.1, weed: 0,
     tint: 'rgba(4,10,40,0.35)', current: 0, rocks: 0, gulls: 0, glow: 26,
   },
+  // ---- ここから難所
+  ruin: {
+    depth: 0.55, ground: '#1d3038', bank: '#7a7566', ray: 0.3, weed: 1,
+    tint: 'rgba(10,70,80,0.34)', tintBottom: 'rgba(6,40,54,0.46)',
+    current: 0.7, rocks: 2, gulls: 0, glow: 12, pillars: 4,
+    hill: '#4b4a42',
+  },
+  crater: {
+    depth: 0.45, ground: '#3a2320', bank: '#4e332c', ray: 0.35, weed: 0,
+    tint: 'rgba(150,60,20,0.30)', tintBottom: 'rgba(200,70,10,0.36)',
+    current: 0.9, rocks: 3, gulls: 0, glow: 10, embers: 16,
+    hill: '#432c27', sky: ['#2b1418', '#6b2a1e', '#c25a2a'],
+  },
+  abyss: {
+    depth: 0.9, ground: '#07070d', bank: '#14141f', ray: 0.04, weed: 0,
+    tint: 'rgba(2,3,14,0.50)', tintBottom: 'rgba(0,0,6,0.62)',
+    current: 1.1, rocks: 0, gulls: 0, glow: 34, pillars: 2,
+    sky: ['#05050c', '#0a0a16', '#12121f'],
+  },
 };
 
 export class Scene {
@@ -490,8 +509,10 @@ export class Scene {
       this.#drawSky(pal, waterY);
       this.#drawHills(pal, style, waterY);
       this.#drawPalms(pal, style, waterY);
+      this.#drawEmbers(style, waterY);
     }
     this.#drawWater(pal, style, waterY);
+    this.#drawPillars(style, waterY);
     this.#drawUnderwater(pal, style, waterY);
     this.#drawSurface(pal, waterY);
     this.#drawIceSheet(style, waterY, pal);
@@ -514,10 +535,12 @@ export class Scene {
 
   #drawSky(pal, waterY) {
     const { ctx, w } = this;
+    // 火口湖や奈落は、時間帯より場所の色が勝つ
+    const sky = (SPOT_STYLE[this.spot] || SPOT_STYLE.pond).sky || pal.sky;
     const g = ctx.createLinearGradient(0, 0, 0, waterY);
-    g.addColorStop(0, pal.sky[0]);
-    g.addColorStop(0.55, pal.sky[1]);
-    g.addColorStop(1, pal.sky[2]);
+    g.addColorStop(0, sky[0]);
+    g.addColorStop(0.55, sky[1]);
+    g.addColorStop(1, sky[2]);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, waterY);
 
@@ -572,7 +595,9 @@ export class Scene {
     for (const c of this.clouds) {
       const cx = c.x * (w + 200) - 100;
       const cy = c.y * waterY;
-      ctx.fillStyle = this.time === 'night' ? 'rgba(180,195,235,0.20)' : 'rgba(255,255,255,0.62)';
+      // 火口湖のように空の色を持つ場所では、雲も煙っぽくする
+      ctx.fillStyle = style.sky ? 'rgba(60,46,46,0.5)'
+        : this.time === 'night' ? 'rgba(180,195,235,0.20)' : 'rgba(255,255,255,0.62)';
       for (const [ox, oy, r] of [[0, 0, 22], [20, 4, 16], [-20, 5, 14], [8, -8, 15]]) {
         ctx.beginPath();
         ctx.ellipse(cx + ox * c.s, cy + oy * c.s, r * c.s, r * c.s * 0.66, 0, 0, TAU);
@@ -583,7 +608,8 @@ export class Scene {
 
   #drawHills(pal, style, waterY) {
     const { ctx, w } = this;
-    if (this.spot === 'deep') return;
+    // 深海と奈落は、遠景に見えるものが何もない
+    if (this.spot === 'deep' || this.spot === 'abyss') return;
     ctx.fillStyle = style.hill || pal.hill;
     ctx.globalAlpha = 0.75;
     ctx.beginPath();
@@ -830,6 +856,47 @@ export class Scene {
   }
 
   /** 水面から顔を出している岩。釣り場の雰囲気づけ。 */
+  /** 火口湖の火の粉。岸から立ちのぼって消える。 */
+  #drawEmbers(style, waterY) {
+    if (!style.embers) return;
+    const { ctx, w } = this;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < style.embers; i++) {
+      const life = (this.t * (0.22 + (i % 5) * 0.05) + i * 0.137) % 1;
+      const x = ((i * 83) % 100) / 100 * w + Math.sin(this.t * 1.3 + i) * 14;
+      const y = waterY - life * (waterY * 0.9 + 20);
+      const a = (1 - life) * 0.8;
+      const r = 1.2 + (i % 3) * 0.9;
+      ctx.fillStyle = `rgba(255,${140 + (i % 4) * 22},60,${a})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** 水に沈んだ石の柱（海底神殿・奈落）。奥行きを出すために水の色より手前に描く。 */
+  #drawPillars(style, waterY) {
+    if (!style.pillars) return;
+    const { ctx, w, h } = this;
+    const depth = h - waterY;
+    for (let i = 0; i < style.pillars; i++) {
+      const x = w * (0.10 + i * 0.255) + Math.sin(i * 2.1) * 10;
+      const cw = 16 + (i % 3) * 6;
+      const top = waterY + depth * (0.10 + ((i * 3) % 4) * 0.08);
+      ctx.fillStyle = `rgba(120,124,112,${0.30 + (i % 2) * 0.12})`;
+      ctx.fillRect(x - cw / 2, top, cw, h - top);
+      // 柱頭と、ところどころ欠けた段
+      ctx.fillStyle = 'rgba(150,154,140,0.34)';
+      ctx.fillRect(x - cw * 0.8, top, cw * 1.6, 7);
+      ctx.fillStyle = 'rgba(20,30,30,0.22)';
+      for (let k = 1; k < 5; k++) {
+        ctx.fillRect(x - cw / 2, top + k * (h - top) / 5, cw, 2);
+      }
+    }
+  }
+
   #drawRocks(style, waterY) {
     if (!style.rocks) return;
     const { ctx, w } = this;
@@ -1357,7 +1424,8 @@ export class Scene {
       ctx.font = 'bold 13px "Hiragino Sans","Noto Sans JP",system-ui,sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
-      const text = `👑 ${f.fish.name}${f.enraged ? '（本気）' : ''}`;
+      const rage = f.rageLevel >= 2 ? '（激昂）' : f.enraged ? '（本気）' : '';
+      const text = `👑 ${f.fish.name}${rage}`;
       const pad = 8;
       const tw = ctx.measureText(text).width + pad * 2;
       ctx.fillStyle = f.enraged

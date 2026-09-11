@@ -13,7 +13,7 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 // 値段や名前はゲーム側から読む（バランス調整のたびに直さなくて済むように）
-import { GEAR, RODS, SPOTS, WEATHERS } from '../src/engine.js';
+import { FISH, GEAR, RODS, SPOTS, WEATHERS } from '../src/engine.js';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8123/fishing/';
 const OUT = new URL('./screenshots/', import.meta.url).pathname;
@@ -194,6 +194,72 @@ console.log('はじめから: 所持金・道具・釣り場・図鑑がすべ�
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForFunction(() => window.fishing);
 if (await money() !== 0) throw new Error('リロードで元に戻ってしまった');
+
+// ---------------------------------------------------------------- 難所（鍵つきの釣り場）
+
+const hardSpot = SPOTS.find((s) => s.hard === 1);
+const keyFish = FISH.find((f) => f.id === hardSpot.require);
+
+const reopenSpotTab = async () => {
+  await page.click('.tab[data-kind="rod"]');
+  await page.click('.tab[data-kind="spot"]');
+  await page.waitForTimeout(200);
+};
+
+// お金があっても、鍵の魚を釣るまでは行けない
+await page.evaluate(() => { window.fishing.player.money = 5000000; window.fishing.render(); });
+await page.click('#btn-shop');
+await reopenSpotTab();
+const hardCard = page.locator('.shop-item').nth(SPOTS.indexOf(hardSpot));
+const hardName = await hardCard.locator('h3').innerText();
+if (!hardName.includes(hardSpot.name)) throw new Error(`難所のカードが見つからない: ${hardName}`);
+if (!hardName.includes('🔥')) throw new Error(`難度の印が出ていない: ${hardName}`);
+const lockNote = await hardCard.locator('.shop-note').innerText();
+if (!lockNote.includes('🔒') || !lockNote.includes(keyFish.name)) {
+  throw new Error(`鍵の案内が出ていない: ${lockNote}`);
+}
+if (!(await hardCard.locator('button').isDisabled())) throw new Error('鍵つきなのに買えてしまう');
+await shot('10-locked');
+
+// 鍵の魚を釣った扱いにすると開く
+await page.evaluate((id) => {
+  window.fishing.player.records[id] = { count: 1, weightKg: 50, lengthCm: 150, price: 400000 };
+  window.fishing.save();
+}, keyFish.id);
+await reopenSpotTab();
+if (await hardCard.locator('button').isDisabled()) throw new Error('ヌシを釣っても開かない');
+await hardCard.locator('button').click();
+await page.waitForTimeout(400);
+const hardBadge = await page.locator('#badge-spot').innerText();
+if (hardBadge !== hardSpot.name) throw new Error(`難所へ移動できていない: ${hardBadge}`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+await shot('11-hard-spot');
+console.log(`難所: ${keyFish.name}を釣るまで鍵がかかり、釣ると ${hardSpot.name} へ行けた`);
+
+// 難所では潮に流され、ラインへの負荷も大きい
+let hazard = null;
+for (let step = 0; step < 900 && !hazard; step++) {
+  const m = await mode();
+  if (m === 'idle' || m === 'bite') await page.click('#btn-action');
+  else if (m === 'fight') {
+    hazard = await page.evaluate(() => {
+      const f = window.fishing.fight;
+      return f && { drift: f.drift, stress: f.stress, tough: f.tough, hard: f.hard };
+    });
+  } else if (m === 'result') {
+    await page.click('#btn-sell');
+    await page.waitForTimeout(700);
+  }
+  await page.waitForTimeout(110);
+}
+await page.keyboard.up('Space');
+if (!hazard) throw new Error('難所で 1 匹も掛からなかった');
+if (!(hazard.drift > 0)) throw new Error(`難所なのに流されない: ${JSON.stringify(hazard)}`);
+if (!(hazard.stress > 1)) throw new Error(`難所なのに負荷が増えない: ${JSON.stringify(hazard)}`);
+if (!(hazard.tough > 1)) throw new Error(`難所なのに魚が軽い: ${JSON.stringify(hazard)}`);
+if (hazard.hard !== 1) throw new Error(`難度が伝わっていない: ${JSON.stringify(hazard)}`);
+console.log(`難所の勝負: 流れ ${hazard.drift} / 負荷 ${hazard.stress.toFixed(2)} / 重さ ×${hazard.tough}`);
 
 if (errors.length) {
   console.error('コンソールエラー:', errors);

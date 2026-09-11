@@ -283,7 +283,50 @@ async function checkWideMoney() {
   console.log(`はみ出し: ${widths.join('/')}px × 所持金 0〜9.8億 すべて OK`);
 }
 
+/**
+ * 難所のカードは行数が多い（難度・負荷・流れ・重さ）ので、
+ * 狭い画面でショップがはみ出さないかを見ておく。
+ */
+async function checkHardSpotCard() {
+  const width = 360;
+  const ctx = await browser.newContext({
+    viewport: { width, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2,
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.fishing);
+  await page.evaluate(() => { window.fishing.player.money = 5000000; window.fishing.render(); });
+  await page.tap('#btn-shop');
+  await page.tap('.tab[data-kind="spot"]');
+  await page.waitForTimeout(350);
+
+  const card = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.shop-item')];
+    const hard = cards.find((c) => c.classList.contains('locked'));
+    if (!hard) return null;
+    hard.scrollIntoView();
+    const rect = hard.getBoundingClientRect();
+    return {
+      note: hard.querySelector('.shop-note').textContent,
+      rows: hard.querySelectorAll('.shop-stats div').length,
+      disabled: hard.querySelector('button').disabled,
+      right: Math.round(rect.right),
+      over: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  if (!card) fail('狭い画面で鍵つきの釣り場カードが出ていない');
+  if (!card.note.includes('🔒')) fail(`鍵の案内が出ていない: ${card.note}`);
+  if (!card.disabled) fail('鍵つきなのに買えてしまう');
+  if (card.rows < 7) fail(`難所の説明が足りない（${card.rows} 行）`);
+  if (card.over > 1) fail(`ショップが ${card.over}px はみ出している`);
+  if (card.right > width) fail(`カードが画面からはみ出している（右端 ${card.right}px）`);
+  await page.screenshot({ path: `${OUT}mobile-hard-spot.png` });
+  await ctx.close();
+  console.log(`難所のカード: ${width}px でもはみ出さず、鍵の案内が出ている`);
+}
+
 await checkWideMoney();
+await checkHardSpotCard();
 await playOn('iphone', 'iPhone 13');
 await playOn('iphone-landscape', 'iPhone 13 landscape');
 await playOn('ipad', 'iPad (gen 7)');
