@@ -361,7 +361,7 @@ export const gearById = (id) => GEAR.find((g) => g.id === id) || null;
 /** 効果なしの状態。 */
 export const NO_GEAR = {
   sell: 0, escapeCut: 0, hookWindow: 0, biteSpeed: 0,
-  rarityBonus: 0, junkCut: 0, line: 0, reel: 0, barH: 0, driftCut: 0,
+  rarityBonus: 0, junkCut: 0, line: 0, reel: 0, barH: 0, driftCut: 0, shinyBonus: 0,
 };
 
 /** 持っている道具の効果を合計する。 */
@@ -644,8 +644,13 @@ export function pickFish(spotId, {
   const sizeRatio = Math.pow(rng(), Math.max(0.6, 2.3 - bonus * 0.8 - (weather?.bigSize ?? 0) * 2));
   const weightKg = round2(lerp(fish.weight[0], fish.weight[1], sizeRatio));
   const lengthCm = Math.round(lerp(fish.length[0], fish.length[1], sizeRatio));
-  const price = Math.max(1, Math.round(priceOf(fish, weightKg) * (1 + (gear.sell ?? 0))));
-  return { fish, weightKg, lengthCm, sizeRatio, price };
+  // まれに光った個体が掛かる。ゴミは光らない
+  const shinyRate = clamp(SHINY.rate * (1 + sumOf('shinyBonus', mods)), 0, 0.5);
+  const shiny = !fish.junk && rng() < shinyRate;
+  const price = Math.max(1, Math.round(
+    priceOf(fish, weightKg) * (1 + (gear.sell ?? 0)) * (shiny ? SHINY.priceMult : 1),
+  ));
+  return { fish, weightKg, lengthCm, sizeRatio, price, shiny };
 }
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -849,7 +854,15 @@ export function createPlayer(over = {}) {
     casts: 0,
     catches: 0,
     earned: 0,
-    records: {}, // fishId -> { count, weightKg, lengthCm, price }
+    records: {},   // fishId -> { count, weightKg, lengthCm, price }
+    shinies: {},   // きらめき個体だけの図鑑（同じ形）
+    xp: 0,         // 熟練度
+    achieved: [],  // 達成した実績の id
+    title: null,   // つけている称号
+    dailyDone: 0,  // お題をこなした回数
+    weathersSeen: [],   // 釣ったことのある天気
+    best: { price: 0, lengthCm: 0, weightKg: 0 },
+    daily: { date: '', quests: [] },
     ...over,
   };
 }
@@ -906,10 +919,28 @@ export function sell(player, result) {
 
 /**
  * 図鑑に登録する。自己ベストを更新したときだけ true を返す。
+ * きらめき個体は、ふつうの図鑑とは別の枠にも残る。
  */
-export function recordCatch(player, result) {
-  const prev = player.records[result.fish.id];
+export function recordCatch(player, result, { weather = null } = {}) {
   player.catches += 1;
+  recordBest(player, result, weather);
+  if (result.shiny) {
+    player.shinies = player.shinies || {};
+    const prevShiny = player.shinies[result.fish.id];
+    if (!prevShiny) {
+      player.shinies[result.fish.id] = {
+        count: 1, weightKg: result.weightKg, lengthCm: result.lengthCm, price: result.price,
+      };
+    } else {
+      prevShiny.count += 1;
+      if (result.weightKg > prevShiny.weightKg) {
+        prevShiny.weightKg = result.weightKg;
+        prevShiny.lengthCm = result.lengthCm;
+        prevShiny.price = result.price;
+      }
+    }
+  }
+  const prev = player.records[result.fish.id];
   if (!prev) {
     player.records[result.fish.id] = {
       count: 1, weightKg: result.weightKg, lengthCm: result.lengthCm, price: result.price,
@@ -924,6 +955,19 @@ export function recordCatch(player, result) {
     return true;
   }
   return false;
+}
+
+/** 実績とお題で使う、通しの自己ベスト。 */
+function recordBest(player, result, weather) {
+  const best = player.best || (player.best = { price: 0, lengthCm: 0, weightKg: 0 });
+  best.price = Math.max(best.price ?? 0, result.price ?? 0);
+  best.lengthCm = Math.max(best.lengthCm ?? 0, result.lengthCm ?? 0);
+  best.weightKg = Math.max(best.weightKg ?? 0, result.weightKg ?? 0);
+  const id = typeof weather === 'string' ? weather : weather?.id;
+  if (id && weatherById(id).id === id) {
+    player.weathersSeen = player.weathersSeen || [];
+    if (!player.weathersSeen.includes(id)) player.weathersSeen.push(id);
+  }
 }
 
 /** 図鑑の進捗（釣り場ごと）。 */
@@ -959,21 +1003,470 @@ export function normalizePlayer(raw) {
     casts: Number.isFinite(raw.casts) ? raw.casts : 0,
     catches: Number.isFinite(raw.catches) ? raw.catches : 0,
     earned: Number.isFinite(raw.earned) ? raw.earned : 0,
+    xp: Number.isFinite(raw.xp) ? Math.max(0, Math.floor(raw.xp)) : 0,
+    dailyDone: Number.isFinite(raw.dailyDone) ? Math.max(0, Math.floor(raw.dailyDone)) : 0,
+    achieved: Array.isArray(raw.achieved) ? raw.achieved.filter((id) => achievementById(id)) : [],
+    weathersSeen: Array.isArray(raw.weathersSeen)
+      ? raw.weathersSeen.filter((id) => WEATHERS.some((w) => w.id === id))
+      : [],
+    best: {
+      price: Math.max(0, Math.round(Number(raw.best?.price) || 0)),
+      lengthCm: Math.max(0, Math.round(Number(raw.best?.lengthCm) || 0)),
+      weightKg: Math.max(0, Number(raw.best?.weightKg) || 0),
+    },
     records: {},
+    shinies: {},
+    daily: { date: '', quests: [] },
   };
-  for (const [id, rec] of Object.entries(raw.records || {})) {
-    if (!fishById(id) || !rec || typeof rec !== 'object') continue;
-    player.records[id] = {
-      count: Math.max(1, Math.floor(rec.count) || 1),
-      weightKg: Number(rec.weightKg) || 0,
-      lengthCm: Math.round(Number(rec.lengthCm) || 0),
-      price: Math.round(Number(rec.price) || 0),
-    };
-  }
+  const readBook = (raw2, into) => {
+    for (const [id, rec] of Object.entries(raw2 || {})) {
+      if (!fishById(id) || !rec || typeof rec !== 'object') continue;
+      into[id] = {
+        count: Math.max(1, Math.floor(rec.count) || 1),
+        weightKg: Number(rec.weightKg) || 0,
+        lengthCm: Math.round(Number(rec.lengthCm) || 0),
+        price: Math.round(Number(rec.price) || 0),
+      };
+    }
+  };
+  readBook(raw.records, player.records);
+  readBook(raw.shinies, player.shinies);
+
+  // 称号は、実績を持っているときだけ有効
+  player.title = earnedTitles(player).includes(raw.title) ? raw.title : null;
+
+  // 今日のお題。日付が違えば、あとで引き直される
+  const quests = Array.isArray(raw.daily?.quests) ? raw.daily.quests : [];
+  player.daily = {
+    date: typeof raw.daily?.date === 'string' ? raw.daily.date : '',
+    quests: quests
+      .filter((q) => q && DAILY_KINDS.some((k) => k.id === q.kind) && Number.isFinite(q.goal))
+      .map((q) => ({
+        kind: q.kind,
+        label: String(q.label ?? ''),
+        goal: Math.max(1, Math.round(q.goal)),
+        progress: Math.max(0, Math.round(Number(q.progress) || 0)),
+        done: Boolean(q.done),
+        reward: Math.max(0, Math.round(Number(q.reward) || 0)),
+        ...(q.spot ? { spot: String(q.spot) } : {}),
+        ...(q.rarity ? { rarity: String(q.rarity) } : {}),
+      })),
+  };
   player.rod = player.rods.includes(raw.rod) ? raw.rod : player.rods[player.rods.length - 1];
   player.lure = player.lures.includes(raw.lure) ? raw.lure : player.lures[player.lures.length - 1];
   player.spot = player.spots.includes(raw.spot) ? raw.spot : player.spots[player.spots.length - 1];
   return player;
+}
+
+// ---------------------------------------------------------------- きらめき個体
+
+/**
+ * まれに掛かる、光った個体。
+ * 値段も経験値も跳ね上がり、図鑑にはふつうの記録とは別に残る。
+ */
+export const SHINY = {
+  rate: 1 / 120,
+  priceMult: 5,
+  xpMult: 3,
+  label: 'きらめき',
+  emoji: '✨',
+};
+
+/** きらめき個体を何種つかまえたか。 */
+export const shinyKinds = (player) => Object.keys(player?.shinies ?? {}).length;
+
+// ---------------------------------------------------------------- 熟練度（釣り人ランク）
+
+/**
+ * 釣るほどたまる経験値でランクが上がる。
+ * ランクの効果は道具と同じ枠に足されるので、遊び続けるほど少しずつ楽になる。
+ */
+export const RANKS = [
+  { level: 1, name: '見習い', need: 0 },
+  { level: 2, name: '駆け出し', need: 60 },
+  { level: 3, name: '一人前', need: 180 },
+  { level: 4, name: '常連', need: 400 },
+  { level: 5, name: '腕利き', need: 800 },
+  { level: 6, name: '玄人', need: 1500 },
+  { level: 7, name: '手練れ', need: 2600 },
+  { level: 8, name: '達人', need: 4200 },
+  { level: 9, name: '匠', need: 6500 },
+  { level: 10, name: '名人', need: 9800 },
+  { level: 11, name: '豪腕', need: 14500 },
+  { level: 12, name: '剛の者', need: 21000 },
+  { level: 13, name: '海を知る者', need: 30000 },
+  { level: 14, name: '竿の聖', need: 42000 },
+  { level: 15, name: '釣仙人', need: 58000 },
+  { level: 16, name: '魚見の眼', need: 80000 },
+  { level: 17, name: '龍を釣る者', need: 110000 },
+  { level: 18, name: '深淵の漁夫', need: 150000 },
+  { level: 19, name: '伝説の釣り人', need: 210000 },
+  { level: 20, name: '釣聖', need: 300000 },
+];
+
+export const MAX_RANK = RANKS[RANKS.length - 1].level;
+
+/** 1 匹ぶんの経験値。レア度と大きさ、ヌシ・きらめきで増える。 */
+export function xpFor(result) {
+  const fish = result?.fish;
+  if (!fish) return 0;
+  if (fish.junk) return 1;
+  const base = { common: 10, uncommon: 25, rare: 60, epic: 150, legendary: 500 }[fish.rarity] ?? 10;
+  const size = 1 + (result.sizeRatio ?? 0.5);
+  const boss = fish.boss ? 2 : 1;
+  const shiny = result.shiny ? SHINY.xpMult : 1;
+  return Math.max(1, Math.round(base * size * boss * shiny));
+}
+
+/** その経験値でのランク。 */
+export function rankAt(xp) {
+  const total = Math.max(0, Number(xp) || 0);
+  let rank = RANKS[0];
+  for (const r of RANKS) if (total >= r.need) rank = r;
+  return rank;
+}
+
+export const rankOf = (player) => rankAt(player?.xp ?? 0);
+
+/** 次のランク（最高位なら null）。 */
+export function nextRank(xp) {
+  const now = rankAt(xp);
+  return RANKS.find((r) => r.level === now.level + 1) ?? null;
+}
+
+/** いまのランクの中での進み具合（0..1）。最高位なら 1。 */
+export function rankProgress(xp) {
+  const total = Math.max(0, Number(xp) || 0);
+  const now = rankAt(total);
+  const next = nextRank(total);
+  if (!next) return 1;
+  return clamp((total - now.need) / (next.need - now.need), 0, 1);
+}
+
+/**
+ * ランクによる恒久ボーナス。道具の効果と同じ形で返す。
+ * 1 段ごとに少しずつなので、序盤の手触りは変えずに、長く遊ぶほど効いてくる。
+ */
+export function rankEffects(player) {
+  const step = rankOf(player).level - 1;
+  return {
+    ...NO_GEAR,
+    sell: step * 0.01,
+    rarityBonus: step * 0.005,
+    biteSpeed: step * 0.005,
+    line: step * 0.03,
+    shinyBonus: step * 0.03,
+  };
+}
+
+/** 道具とランクを合わせた、いま効いている効果の合計。 */
+export function totalEffects(player) {
+  const gear = gearEffects(player);
+  const rank = rankEffects(player);
+  const total = { ...NO_GEAR };
+  for (const key of Object.keys(total)) total[key] = (gear[key] ?? 0) + (rank[key] ?? 0);
+  return total;
+}
+
+/** 経験値を足す。ランクが上がったかどうかも返す。 */
+export function gainXp(player, result) {
+  const before = rankOf(player);
+  const gained = xpFor(result);
+  player.xp = Math.max(0, (player.xp ?? 0) + gained);
+  const after = rankOf(player);
+  return { gained, rank: after, leveledUp: after.level > before.level };
+}
+
+// ---------------------------------------------------------------- 実績と称号
+
+const countRecords = (player, match) =>
+  FISH.filter((f) => match(f) && player?.records?.[f.id]).length;
+
+const completeSpots = (player) =>
+  SPOTS.filter((s) => {
+    const prog = collectionProgress(player, s.id);
+    return prog.total > 0 && prog.found === prog.total;
+  }).length;
+
+/**
+ * やりこみの目印。value(player) が goal に届くと達成。
+ * reward は賞金、title があると称号が増える（実績の画面でつけかえられる）。
+ */
+export const ACHIEVEMENTS = [
+  // ---- 釣った数
+  { id: 'first', icon: '🎣', name: 'はじめの一匹', note: '1 匹釣る', goal: 1, reward: 300, value: (p) => p.catches },
+  { id: 'catch100', icon: '🐟', name: '百匹釣り', note: '100 匹釣る', goal: 100, reward: 5000, value: (p) => p.catches },
+  { id: 'catch1000', icon: '🐠', name: '千匹釣り', note: '1000 匹釣る', goal: 1000, reward: 120000, title: '千匹の主', value: (p) => p.catches },
+  { id: 'cast500', icon: '💪', name: '投げ続けて 500 回', note: '500 回キャストする', goal: 500, reward: 20000, value: (p) => p.casts },
+
+  // ---- 図鑑
+  { id: 'book10', icon: '📖', name: '図鑑 10 種', note: '10 種を図鑑に載せる', goal: 10, reward: 1500, value: (p) => Object.keys(p.records).length },
+  { id: 'book40', icon: '📗', name: '図鑑 40 種', note: '40 種を図鑑に載せる', goal: 40, reward: 25000, value: (p) => Object.keys(p.records).length },
+  { id: 'book80', icon: '📘', name: '図鑑 80 種', note: '80 種を図鑑に載せる', goal: 80, reward: 150000, title: '記録係', value: (p) => Object.keys(p.records).length },
+  { id: 'bookAll', icon: '📚', name: '図鑑コンプリート', note: `全 ${FISH.length} 種を図鑑に載せる`, goal: FISH.length, reward: 2000000, title: '図鑑の主', value: (p) => Object.keys(p.records).length },
+  { id: 'spotComplete', icon: '🏅', name: 'ひと釣り場を完全制覇', note: 'どこか 1 か所の魚をすべて釣る', goal: 1, reward: 30000, value: completeSpots },
+  { id: 'spotAll', icon: '🏆', name: '全釣り場を完全制覇', note: '11 か所すべての魚を釣りきる', goal: SPOTS.length, reward: 3000000, title: '水辺の王', value: completeSpots },
+
+  // ---- ヌシ
+  { id: 'boss1', icon: '👑', name: 'はじめてのヌシ', note: 'ヌシを 1 体釣る', goal: 1, reward: 8000, value: (p) => countRecords(p, (f) => f.boss) },
+  { id: 'boss5', icon: '👑', name: 'ヌシ狩り', note: 'ヌシを 5 体釣る', goal: 5, reward: 60000, value: (p) => countRecords(p, (f) => f.boss) },
+  { id: 'bossAll', icon: '🐉', name: '全ヌシ制覇', note: '11 体のヌシをすべて釣る', goal: SPOTS.length, reward: 1500000, title: 'ヌシ狩り', value: (p) => countRecords(p, (f) => f.boss) },
+
+  // ---- 難所
+  { id: 'hardVisit', icon: '🏛️', name: '難所へ踏み込む', note: '難所の釣り場へ行く', goal: 1, reward: 20000, value: (p) => p.spots.filter((id) => isHardSpot(spotById(id))).length },
+  { id: 'hardBoss', icon: '🕳️', name: '奈落の主を釣る', note: '奈落の淵のヌシを釣る', goal: 1, reward: 1000000, title: '淵をのぞいた者', value: (p) => (p.records.narakunushi ? 1 : 0) },
+  { id: 'hardBook', icon: '🌋', name: '難所の魚 20 種', note: '難所の魚を 20 種釣る', goal: 20, reward: 400000, value: (p) => countRecords(p, (f) => isHardSpot(spotById(f.spot))) },
+
+  // ---- きらめき
+  { id: 'shiny1', icon: '✨', name: 'はじめてのきらめき', note: 'きらめき個体を 1 種釣る', goal: 1, reward: 10000, value: shinyKinds },
+  { id: 'shiny10', icon: '✨', name: 'きらめき 10 種', note: 'きらめき個体を 10 種釣る', goal: 10, reward: 120000, value: shinyKinds },
+  { id: 'shiny30', icon: '🌈', name: 'きらめき 30 種', note: 'きらめき個体を 30 種釣る', goal: 30, reward: 800000, title: '虹を釣る者', value: shinyKinds },
+
+  // ---- お金と大物
+  { id: 'earn10k', icon: '💰', name: '売上 1 万円', note: '通算 10,000 円ぶん売る', goal: 10000, reward: 2000, value: (p) => p.earned },
+  { id: 'earn1m', icon: '💰', name: '売上 100 万円', note: '通算 1,000,000 円ぶん売る', goal: 1000000, reward: 80000, value: (p) => p.earned },
+  { id: 'earn100m', icon: '🏦', name: '売上 1 億円', note: '通算 100,000,000 円ぶん売る', goal: 100000000, reward: 5000000, title: '長者', value: (p) => p.earned },
+  { id: 'big10k', icon: '🎏', name: '一匹 1 万円', note: '1 匹で 10,000 円の魚を釣る', goal: 10000, reward: 5000, value: (p) => p.best?.price ?? 0 },
+  { id: 'big1m', icon: '🎇', name: '一匹 100 万円', note: '1 匹で 1,000,000 円の魚を釣る', goal: 1000000, reward: 300000, title: '大物師', value: (p) => p.best?.price ?? 0 },
+  { id: 'long200', icon: '📏', name: '全長 2 メートル', note: '200cm 以上の魚を釣る', goal: 200, reward: 12000, value: (p) => p.best?.lengthCm ?? 0 },
+  { id: 'long500', icon: '📐', name: '全長 5 メートル', note: '500cm 以上の魚を釣る', goal: 500, reward: 200000, value: (p) => p.best?.lengthCm ?? 0 },
+
+  // ---- 天気とそろえもの
+  { id: 'weatherAll', icon: '🌈', name: '晴れの日も嵐の日も', note: '5 種類すべての天気で釣る', goal: WEATHERS.length, reward: 40000, value: (p) => (p.weathersSeen ?? []).length },
+  { id: 'rodAll', icon: '🎣', name: '竿をすべてそろえる', note: `竿 ${RODS.length} 本を買う`, goal: RODS.length, reward: 150000, value: (p) => p.rods.length },
+  { id: 'lureAll', icon: '🪝', name: 'ルアーをすべてそろえる', note: `ルアー ${LURES.length} 個を買う`, goal: LURES.length, reward: 150000, value: (p) => p.lures.length },
+  { id: 'gearAll', icon: '🧰', name: '道具をすべてそろえる', note: `道具 ${GEAR.length} 種を買う`, goal: GEAR.length, reward: 250000, title: '道具自慢', value: (p) => p.gears.length },
+
+  // ---- ランクとお題
+  { id: 'rank5', icon: '⭐', name: 'ランク 5', note: '熟練度を 5 まで上げる', goal: 5, reward: 8000, value: (p) => rankOf(p).level },
+  { id: 'rank10', icon: '🌟', name: 'ランク 10', note: '熟練度を 10 まで上げる', goal: 10, reward: 100000, value: (p) => rankOf(p).level },
+  { id: 'rank20', icon: '💫', name: '釣聖', note: '熟練度を 20 まで上げる', goal: MAX_RANK, reward: 3000000, title: '釣聖', value: (p) => rankOf(p).level },
+  { id: 'daily10', icon: '📅', name: 'お題 10 回', note: '日替わりのお題を 10 回こなす', goal: 10, reward: 30000, value: (p) => p.dailyDone ?? 0 },
+  { id: 'daily50', icon: '🗓️', name: 'お題 50 回', note: '日替わりのお題を 50 回こなす', goal: 50, reward: 400000, title: '皆勤', value: (p) => p.dailyDone ?? 0 },
+];
+
+export const achievementById = (id) => ACHIEVEMENTS.find((a) => a.id === id) || null;
+
+/** 達成ぐあい。0..1 と、いまの値・目標をまとめて返す。 */
+export function achievementState(player, achievement) {
+  const value = Math.max(0, Number(achievement.value(player)) || 0);
+  const done = (player.achieved ?? []).includes(achievement.id);
+  return { value, goal: achievement.goal, ratio: clamp(value / achievement.goal, 0, 1), done };
+}
+
+/**
+ * 達成したものを拾って、賞金を渡す。新しく達成したものだけを返す。
+ * 賞金でさらに別の実績が開くことがあるので、増えなくなるまで回す。
+ */
+export function checkAchievements(player) {
+  player.achieved = player.achieved ?? [];
+  const unlocked = [];
+  for (let pass = 0; pass < 3; pass++) {
+    let added = 0;
+    for (const a of ACHIEVEMENTS) {
+      if (player.achieved.includes(a.id)) continue;
+      if (achievementState(player, a).value < a.goal) continue;
+      player.achieved.push(a.id);
+      player.money += a.reward;
+      unlocked.push(a);
+      added++;
+    }
+    if (!added) break;
+  }
+  return unlocked;
+}
+
+/** 手に入れている称号。 */
+export const earnedTitles = (player) =>
+  ACHIEVEMENTS.filter((a) => a.title && (player?.achieved ?? []).includes(a.id)).map((a) => a.title);
+
+/** 称号をつける。持っていなければ何もしない（null は「外す」）。 */
+export function setTitle(player, title) {
+  if (title === null) { player.title = null; return true; }
+  if (!earnedTitles(player).includes(title)) return false;
+  player.title = title;
+  return true;
+}
+
+// ---------------------------------------------------------------- 日替わりのお題
+
+/** 文字列から種を作る（同じ日なら同じお題になるように）。 */
+function seedOf(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** その日の鍵。端末の日付をそのまま使う。 */
+export function todayKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * お題の種類。make() がその日のお題を組み立てる。
+ * 行ける釣り場に合わせて中身と賞金を変えるので、序盤でも無理な注文は出ない。
+ */
+export const DAILY_KINDS = [
+  {
+    id: 'count',
+    make: (rng, ctx) => {
+      const spot = ctx.spots[Math.floor(rng() * ctx.spots.length)];
+      const goal = 3 + Math.floor(rng() * 4);
+      return { goal, spot: spot.id, label: `${spot.name}で ${goal} 匹釣る` };
+    },
+  },
+  {
+    id: 'rarity',
+    make: (rng, ctx) => {
+      const rarity = ctx.tier >= 6 ? 'epic' : ctx.tier >= 3 ? 'rare' : 'uncommon';
+      const goal = rarity === 'epic' ? 1 + Math.floor(rng() * 2) : 2 + Math.floor(rng() * 3);
+      return { goal, rarity, label: `${RARITY[rarity].label}以上を ${goal} 匹釣る` };
+    },
+  },
+  {
+    id: 'sell',
+    make: (rng, ctx) => {
+      const goal = Math.round(ctx.unit * (6 + Math.floor(rng() * 6)));
+      return { goal, label: `${goal.toLocaleString('ja-JP')}円ぶん売る` };
+    },
+  },
+  {
+    id: 'size',
+    make: (rng, ctx) => {
+      const goal = Math.round(ctx.big * (0.45 + rng() * 0.25) / 10) * 10;
+      return { goal, label: `${goal}cm 以上の魚を釣る` };
+    },
+  },
+  {
+    id: 'casts',
+    make: (rng) => {
+      const goal = 12 + Math.floor(rng() * 13);
+      return { goal, label: `${goal} 回キャストする` };
+    },
+  },
+  {
+    id: 'boss',
+    need: (ctx) => ctx.tier >= 4,
+    make: () => ({ goal: 1, label: 'ヌシを 1 体釣る' }),
+  },
+  {
+    id: 'shiny',
+    need: (ctx) => ctx.tier >= 2,
+    make: () => ({ goal: 1, label: 'きらめき個体を 1 匹釣る' }),
+  },
+  {
+    id: 'junk',
+    make: (rng) => {
+      const goal = 2 + Math.floor(rng() * 3);
+      return { goal, label: `ゴミを ${goal} 個拾って水をきれいにする` };
+    },
+  },
+];
+
+export const DAILY_COUNT = 3;
+
+/** その日のお題を 3 つ引く。同じ日・同じ持ち物なら、何度引いても同じものが出る。 */
+export function rollDailies(dateKey, player) {
+  const owned = SPOTS.filter((s) => (player?.spots ?? ['pond']).includes(s.id));
+  const spots = owned.length ? owned : [SPOTS[0]];
+  const tier = SPOTS.indexOf(spots[spots.length - 1]);
+  const fishHere = spots.flatMap((s) => fishOfSpot(s.id)).filter((f) => !f.junk);
+  const ctx = {
+    spots,
+    tier,
+    // 賞金と売上のお題は、いちばん奥の釣り場の相場に合わせる
+    unit: Math.max(200, Math.round(median(fishHere.map((f) => f.value)) * 2)),
+    // ヌシは別格なので、大きさのお題はふつうの魚で届く範囲にする
+    big: Math.max(40, Math.max(...fishHere.filter((f) => !f.boss).map((f) => f.length[1]))),
+  };
+  const rng = mulberry32(seedOf(`${dateKey}#${tier}`));
+  const pool = DAILY_KINDS.filter((k) => !k.need || k.need(ctx));
+  const quests = [];
+  const used = new Set();
+  let guard = 0;
+  while (quests.length < DAILY_COUNT && guard++ < 50) {
+    const kind = pool[Math.floor(rng() * pool.length)];
+    if (used.has(kind.id)) continue;
+    used.add(kind.id);
+    const made = kind.make(rng, ctx);
+    quests.push({
+      kind: kind.id, progress: 0, done: false,
+      reward: rewardFor(kind.id, made, ctx),
+      ...made,
+    });
+  }
+  return quests;
+}
+
+const median = (values) => {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+};
+
+/** お題の賞金。手間の重さと、いまの釣り場の相場で決める。 */
+function rewardFor(kindId, made, ctx) {
+  const weight = {
+    count: 1.4, rarity: 1.8, sell: 1.2, size: 1.6, casts: 1.0, boss: 4, shiny: 4, junk: 1.1,
+  }[kindId] ?? 1;
+  return Math.max(300, Math.round(ctx.unit * weight * 2 / 100) * 100);
+}
+
+/** 日付が変わっていたらお題を引き直す。引き直したら true。 */
+export function refreshDaily(player, dateKey = todayKey()) {
+  const daily = player.daily;
+  if (daily && daily.date === dateKey && Array.isArray(daily.quests) && daily.quests.length) return false;
+  player.daily = { date: dateKey, quests: rollDailies(dateKey, player) };
+  return true;
+}
+
+/**
+ * お題の進みを足す。
+ * event は { type: 'cast' } / { type: 'catch', result, spot } / { type: 'sell', price }。
+ * 達成したお題は賞金を渡して、そのぶんを返す。
+ */
+export function progressDaily(player, event) {
+  const quests = player.daily?.quests;
+  if (!Array.isArray(quests)) return [];
+  const done = [];
+  for (const q of quests) {
+    if (q.done) continue;
+    const before = q.progress;
+    if (event.type === 'cast' && q.kind === 'casts') q.progress += 1;
+    if (event.type === 'sell' && q.kind === 'sell') q.progress += Math.max(0, event.price ?? 0);
+    if (event.type === 'catch') {
+      const fish = event.result?.fish;
+      if (!fish) continue;
+      if (q.kind === 'count' && fish.spot === q.spot && !fish.junk) q.progress += 1;
+      if (q.kind === 'junk' && fish.junk) q.progress += 1;
+      if (q.kind === 'rarity' && !fish.junk
+        && RARITY_ORDER.indexOf(fish.rarity) >= RARITY_ORDER.indexOf(q.rarity)) q.progress += 1;
+      if (q.kind === 'size') q.progress = Math.max(q.progress, event.result.lengthCm ?? 0);
+      if (q.kind === 'boss' && fish.boss) q.progress += 1;
+      if (q.kind === 'shiny' && event.result.shiny) q.progress += 1;
+    }
+    if (q.progress === before) continue;
+    if (q.progress >= q.goal) {
+      q.progress = q.goal;
+      q.done = true;
+      player.money += q.reward;
+      player.dailyDone = (player.dailyDone ?? 0) + 1;
+      done.push(q);
+    }
+  }
+  return done;
+}
+
+/** 今日のお題の進み（済み / 全部）。 */
+export function dailyProgress(player) {
+  const quests = player.daily?.quests ?? [];
+  return { done: quests.filter((q) => q.done).length, total: quests.length };
 }
 
 // ---------------------------------------------------------------- 表示用

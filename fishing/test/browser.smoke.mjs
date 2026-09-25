@@ -13,7 +13,7 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 // 値段や名前はゲーム側から読む（バランス調整のたびに直さなくて済むように）
-import { FISH, GEAR, RODS, SPOTS, WEATHERS } from '../src/engine.js';
+import { ACHIEVEMENTS, FISH, GEAR, RODS, SPOTS, WEATHERS, rankAt } from '../src/engine.js';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8123/fishing/';
 const OUT = new URL('./screenshots/', import.meta.url).pathname;
@@ -260,6 +260,125 @@ if (!(hazard.stress > 1)) throw new Error(`難所なのに負荷が増えない:
 if (!(hazard.tough > 1)) throw new Error(`難所なのに魚が軽い: ${JSON.stringify(hazard)}`);
 if (hazard.hard !== 1) throw new Error(`難度が伝わっていない: ${JSON.stringify(hazard)}`);
 console.log(`難所の勝負: 流れ ${hazard.drift} / 負荷 ${hazard.stress.toFixed(2)} / 重さ ×${hazard.tough}`);
+
+// ---------------------------------------------------------------- やりこみ（熟練度・実績・お題）
+
+// 池に戻って 1 匹釣り、経験値とお題が動くことを見る
+await page.evaluate(() => { window.fishing.player.spot = 'pond'; window.fishing.render(); });
+let grindCaught = false;
+for (let step = 0; step < 900 && !grindCaught; step++) {
+  const m = await mode();
+  if (m === 'idle' || m === 'bite') {
+    await page.click('#btn-action');
+  } else if (m === 'fight') {
+    const hold = await page.evaluate(() => {
+      const f = window.fishing.fight;
+      return f ? f.barY > f.fishY : false;
+    });
+    await page.keyboard[hold ? 'down' : 'up']('Space');
+  } else if (m === 'result') {
+    await page.keyboard.up('Space');
+    await page.click('#btn-sell');
+    await page.waitForTimeout(800);
+    grindCaught = true;
+  }
+  await page.waitForTimeout(110);
+}
+await page.keyboard.up('Space');
+if (!grindCaught) throw new Error('やりこみの確認で 1 匹も釣れなかった');
+
+const grind = await page.evaluate(() => ({
+  xp: window.fishing.player.xp,
+  achieved: window.fishing.player.achieved.length,
+  quests: (window.fishing.player.daily.quests || []).map((q) => ({ kind: q.kind, goal: q.goal, progress: q.progress })),
+  rankBadge: document.getElementById('badge-rank').textContent,
+  dailyRows: document.querySelectorAll('#daily-list .daily-item').length,
+}));
+if (!(grind.xp > 0)) throw new Error('経験値が入っていない');
+if (grind.achieved < 1) throw new Error('実績がひとつも達成されていない');
+if (grind.quests.length !== 3) throw new Error(`お題が 3 つではない（${grind.quests.length}）`);
+if (grind.dailyRows !== 3) throw new Error(`お題が画面に出ていない（${grind.dailyRows} 行）`);
+if (!grind.rankBadge.startsWith('Lv.')) throw new Error(`熟練度が出ていない: ${grind.rankBadge}`);
+const castQuest = grind.quests.find((q) => q.kind === 'casts');
+if (castQuest && castQuest.progress < 1) throw new Error('キャストのお題が進んでいない');
+console.log(`やりこみ: ${grind.rankBadge} / 経験値 ${grind.xp} / 実績 ${grind.achieved} 件 / お題 ${grind.quests.length} 個`);
+
+// ランクが上がると、上のバーと記録の画面に出る
+await page.evaluate(() => {
+  const p = window.fishing.player;
+  p.xp = 250000;
+  p.catches = 1200;
+  p.casts = 900;
+  p.earned = 2000000;
+  p.dailyDone = 60;
+  window.fishing.render();
+});
+await page.click('#btn-quest');
+await page.waitForTimeout(400);
+await shot('12-quest');
+const quest = await page.evaluate(() => ({
+  level: document.getElementById('rank-level').textContent,
+  name: document.getElementById('rank-name').textContent,
+  fill: document.getElementById('rank-fill').style.width,
+  effect: document.getElementById('rank-effect').textContent,
+  cards: document.querySelectorAll('.ach-item').length,
+  doneCards: document.querySelectorAll('.ach-item.done').length,
+  titles: document.querySelectorAll('.title-chip').length,
+  head: document.getElementById('quest-progress').textContent,
+}));
+if (quest.cards !== ACHIEVEMENTS.length) throw new Error(`実績カードの数が合わない: ${quest.cards}`);
+if (!quest.effect.includes('売値')) throw new Error(`ランクの効果が出ていない: ${quest.effect}`);
+if (!quest.fill) throw new Error('経験値バーが伸びていない');
+console.log(`記録の画面: ${quest.level} ${quest.name} / ${quest.head} / 称号 ${quest.titles} 個`);
+
+// 実績を達成すると称号が増え、つけかえられる
+const before = await page.evaluate(() => document.querySelectorAll('.title-chip').length);
+if (before < 2) throw new Error(`称号が足りない（${before} 個）`);
+
+const readTitle = () => page.evaluate(() => {
+  const el = document.getElementById('badge-title');
+  return { hidden: el.hidden, text: el.textContent, saved: JSON.parse(localStorage.getItem('fishing:save')).title };
+});
+
+// まだつけていない称号に切りかえられること
+const wanted = await page.locator('.title-chip:not(.on)').first().innerText();
+await page.locator('.title-chip:not(.on)').first().click();
+await page.waitForTimeout(300);
+const put = await readTitle();
+if (put.hidden) throw new Error('称号をつけても上のバーに出ない');
+if (!put.text.includes(wanted)) throw new Error(`つけた称号と違う: ${put.text} / ${wanted}`);
+if (put.saved !== wanted) throw new Error(`称号が保存されていない: ${put.saved}`);
+
+// もう一度押すと外れる
+await page.locator('.title-chip.on').first().click();
+await page.waitForTimeout(300);
+const off = await readTitle();
+if (!off.hidden) throw new Error('称号を外しても消えない');
+if (off.saved !== null) throw new Error(`外した称号が保存に残っている: ${off.saved}`);
+console.log(`称号: 「${wanted}」をつけ外しして保存できた`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+
+// きらめき個体は、値段も図鑑の扱いも別
+const shiny = await page.evaluate(() => {
+  const p = window.fishing.player;
+  p.shinies = { funa: { count: 1, weightKg: 1, lengthCm: 30, price: 5000 } };
+  p.records.funa = p.records.funa || { count: 1, weightKg: 1, lengthCm: 30, price: 1000 };
+  window.fishing.save();
+  return true;
+});
+if (!shiny) throw new Error('きらめきの記録を作れなかった');
+await page.click('#btn-book');
+await page.waitForTimeout(400);
+const book = await page.evaluate(() => ({
+  shinyCells: document.querySelectorAll('.book-cell.shiny').length,
+  progress: document.getElementById('book-progress').textContent,
+}));
+if (book.shinyCells < 1) throw new Error('図鑑にきらめきの印が出ていない');
+if (!book.progress.includes('✨')) throw new Error(`図鑑の見出しにきらめきの数が出ていない: ${book.progress}`);
+console.log(`図鑑: ${book.progress}`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
 
 if (errors.length) {
   console.error('コンソールエラー:', errors);

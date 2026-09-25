@@ -268,7 +268,15 @@ async function checkWideMoney() {
       const page = await ctx.newPage();
       await page.goto(BASE, { waitUntil: 'networkidle' });
       await page.waitForFunction(() => window.fishing);
-      await page.evaluate((m) => { window.fishing.player.money = m; window.fishing.render(); }, money);
+      // いちばん幅を食う状態で見る（最高ランク＋いちばん長い称号つき）
+      await page.evaluate((m) => {
+        const p = window.fishing.player;
+        p.money = m;
+        p.xp = 999999;
+        p.achieved = ['rank20', 'bossAll', 'catch1000'];
+        p.title = '伝説の釣り人';
+        window.fishing.render();
+      }, money);
       await page.waitForTimeout(150);
       const box = await page.evaluate(() => ({
         over: document.documentElement.scrollWidth - window.innerWidth,
@@ -325,8 +333,82 @@ async function checkHardSpotCard() {
   console.log(`難所のカード: ${width}px でもはみ出さず、鍵の案内が出ている`);
 }
 
+/**
+ * 記録の画面（熟練度・称号・実績）と、日誌の中の「今日のお題」。
+ * 行数が多いので、狭い画面で読めるかを見ておく。
+ */
+async function checkQuestScreen() {
+  const width = 390;
+  const ctx = await browser.newContext({
+    viewport: { width, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2,
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.fishing);
+  await page.evaluate(() => {
+    const p = window.fishing.player;
+    p.xp = 120000;
+    p.catches = 1200;
+    p.casts = 900;
+    window.fishing.render();
+  });
+
+  await page.tap('#btn-quest');
+  await page.waitForTimeout(450);
+  const quest = await page.evaluate(() => ({
+    level: document.getElementById('rank-level').textContent,
+    cards: document.querySelectorAll('.ach-item').length,
+    titles: document.querySelectorAll('.title-chip').length,
+    over: document.documentElement.scrollWidth - window.innerWidth,
+    tap: Math.round(document.querySelector('.title-chip')?.getBoundingClientRect().height ?? 0),
+  }));
+  if (!quest.level.startsWith('Lv.')) fail(`熟練度が出ていない: ${quest.level}`);
+  if (quest.cards < 30) fail(`実績が出ていない（${quest.cards} 件）`);
+  if (quest.titles < 1) fail('称号が出ていない');
+  if (quest.tap < 36) fail(`称号のボタンが小さすぎる（${quest.tap}px）`);
+  if (quest.over > 1) fail(`記録の画面が ${quest.over}px はみ出している`);
+  await page.screenshot({ path: `${OUT}mobile-quest.png` });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  // 日誌を引き出すと、今日のお題が読める
+  await page.tap('#btn-log');
+  await page.waitForTimeout(450);
+  const daily = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#daily-list .daily-item')];
+    const panels = [...document.querySelectorAll('.sidebar .panel')];
+    const name = (el, i) => el.querySelector('h2')?.textContent?.trim() ?? `panel ${i}`;
+    let overlap = '';
+    let squashed = '';
+    for (let i = 0; i < panels.length; i++) {
+      const box = panels[i].getBoundingClientRect();
+      if (i > 0 && box.top < panels[i - 1].getBoundingClientRect().bottom - 1) overlap = name(panels[i], i);
+      // 見出しだけになって中身が読めない状態も拾う
+      if (box.height < 60) squashed = `${name(panels[i], i)}（${Math.round(box.height)}px）`;
+    }
+    return {
+      rows: rows.length,
+      overlap,
+      squashed,
+      over: document.documentElement.scrollWidth - window.innerWidth,
+      right: Math.max(0, ...rows.map((r) => Math.round(r.getBoundingClientRect().right))),
+      text: rows.map((r) => r.querySelector('.daily-label').textContent).join(' / '),
+    };
+  });
+  if (daily.rows !== 3) fail(`お題が 3 つ出ていない（${daily.rows}）`);
+  // パネルどうしが重なっていないこと（高さが足りないと重なって読めなくなる）
+  if (daily.overlap) fail(`日誌の中で「${daily.overlap}」が重なっている`);
+  if (daily.squashed) fail(`日誌の中で「${daily.squashed}」が潰れている`);
+  if (daily.over > 1) fail(`日誌が ${daily.over}px はみ出している`);
+  if (daily.right > width) fail(`お題が画面からはみ出している（右端 ${daily.right}px）`);
+  await page.screenshot({ path: `${OUT}mobile-daily.png` });
+  await ctx.close();
+  console.log(`記録の画面: ${width}px で実績 ${quest.cards} 件・称号 ${quest.titles} 個／お題「${daily.text}」`);
+}
+
 await checkWideMoney();
 await checkHardSpotCard();
+await checkQuestScreen();
 await playOn('iphone', 'iPhone 13');
 await playOn('iphone-landscape', 'iPhone 13 landscape');
 await playOn('ipad', 'iPad (gen 7)');

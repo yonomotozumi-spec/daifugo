@@ -445,6 +445,8 @@ button.hot {
 }
 
 .panel {
+  /* 中身のぶんだけ縦に取る。縮めると下の段と重なってしまう */
+  flex: 0 0 auto;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -794,6 +796,10 @@ dialog form { margin-top: 12px; text-align: right; }
     box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.5);
     transform: translateY(102%);
     transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+    /* 釣果・お題・日誌が入りきらない高さでも、なぞって読めるように */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .sidebar.open { transform: translateY(0); }
@@ -808,6 +814,11 @@ dialog form { margin-top: 12px; text-align: right; }
   }
 
   .sheet-link { display: block; text-align: center; margin-top: 4px; }
+
+  /* 引き出した日誌は全体がなぞれるので、中身のぶんだけ縦に取る。
+     日誌だけ縮めると、見出しだけになって読めなくなる */
+  .sidebar .panel.grow { flex: 0 0 auto; }
+  .sidebar .log { max-height: 34dvh; }
 
   .sheet-backdrop {
     display: block;
@@ -895,11 +906,13 @@ button.danger:hover:not(:disabled) { background: linear-gradient(180deg, #e8635f
  * 小さい端末では、所持金の桁が増えると 1 行に収まらない。
  * バッジをまとめて 2 行目に逃がして、はみ出しを起こさないようにする。
  */
-@media (max-width: 400px) {
+/* 上のバーが入りきらない幅では、バッジだけ下の段に送る。
+   熟練度と称号が増えたぶん、折り返す幅も広げてある */
+@media (max-width: 620px) {
   .topbar { flex-wrap: wrap; row-gap: 6px; }
   .wallet { order: 1; }
   .topbar-actions { order: 2; }
-  .badges { order: 3; flex-basis: 100%; overflow: visible; }
+  .badges { order: 3; flex-basis: 100%; overflow: visible; flex-wrap: wrap; }
 }
 
 /* 横向きにした電話。高さが足りないので操作部を小さくする */
@@ -913,3 +926,169 @@ button.danger:hover:not(:disabled) { background: linear-gradient(180deg, #e8635f
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ------------------------------------------------ やりこみ（熟練度・称号・お題・実績） */
+
+.badge-rank {
+  background: rgba(247, 201, 72, 0.18);
+  border-color: rgba(247, 201, 72, 0.45);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge-rank .r-name { margin-left: 4px; }
+
+.badge-title {
+  background: rgba(190, 140, 255, 0.2);
+  border-color: rgba(200, 160, 255, 0.5);
+  color: #e6d6ff;
+  white-space: nowrap;
+}
+
+/* 狭い画面では、上のバーは Lv. だけにする（名前と称号は記録の画面で読める） */
+@media (max-width: 560px) {
+  .badge-rank .r-name { display: none; }
+  .badge-title { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* ---- 今日のお題（日誌の上） */
+
+.panel-count { font-size: 11px; opacity: 0.7; font-weight: 600; }
+
+#daily-panel.all-done h2 { color: var(--good); }
+
+.daily { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+
+.daily-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.daily-label { min-width: 0; }
+.daily-num { font-variant-numeric: tabular-nums; opacity: 0.75; white-space: nowrap; }
+
+.daily-bar {
+  grid-column: 1 / -1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.daily-bar i { display: block; height: 100%; background: var(--gold); border-radius: 3px; transition: width 0.4s ease; }
+.daily-reward { grid-column: 1 / -1; font-size: 11px; color: var(--gold); opacity: 0.85; }
+
+.daily-item.done .daily-label { color: var(--good); }
+.daily-item.done .daily-bar i { background: var(--good); }
+.daily-item.done .daily-reward { opacity: 0.5; text-decoration: line-through; }
+
+/* ---- 記録の画面 */
+
+.rank-box {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(247, 201, 72, 0.35);
+  background: linear-gradient(180deg, rgba(247, 201, 72, 0.14), rgba(255, 255, 255, 0.04));
+  margin-bottom: 14px;
+}
+
+.rank-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rank-level { font-size: 13px; color: var(--gold); font-weight: 800; }
+.rank-name { font-size: 17px; }
+.rank-next { margin-left: auto; font-size: 12px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+
+.rank-bar {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.rank-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f7c948, #ffe9a6);
+  transition: width 0.5s ease;
+}
+
+.rank-effect { margin: 8px 0 0; font-size: 12px; opacity: 0.8; line-height: 1.6; }
+
+.title-box, .ach-box { margin-bottom: 14px; }
+.title-box h3, .ach-box h3 { margin: 0 0 8px; font-size: 14px; }
+.title-empty { margin: 0; font-size: 12px; opacity: 0.6; }
+.title-list { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.title-chip {
+  padding: 7px 12px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.title-chip.on {
+  border-color: rgba(200, 160, 255, 0.7);
+  background: rgba(190, 140, 255, 0.24);
+  font-weight: 700;
+}
+
+.ach-list { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+
+.ach-item {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ach-item.done {
+  border-color: rgba(111, 224, 160, 0.5);
+  background: rgba(111, 224, 160, 0.1);
+}
+
+.ach-head { display: flex; align-items: baseline; gap: 6px; }
+.ach-head strong { font-size: 14px; }
+.ach-icon { font-size: 15px; }
+.ach-reward { margin-left: auto; font-size: 12px; color: var(--gold); white-space: nowrap; }
+.ach-item.done .ach-reward { color: var(--good); }
+.ach-note { margin: 0; font-size: 12px; opacity: 0.7; }
+
+.ach-bar { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.ach-bar i { display: block; height: 100%; background: var(--gold); border-radius: 3px; }
+.ach-item.done .ach-bar i { background: var(--good); }
+
+.ach-num { font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; }
+.ach-title { font-size: 11px; color: #e6d6ff; }
+
+/* ---- きらめき個体 */
+
+.result-shiny {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #ffd6f5, #b8f0ff, #ffe9a6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.result-card[data-shiny="true"] {
+  box-shadow: 0 0 0 2px rgba(255, 214, 245, 0.6), 0 0 34px 6px rgba(180, 230, 255, 0.35);
+}
+
+.result-xp { margin: 4px 0 0; font-size: 12px; opacity: 0.75; }
+.result-xp[data-up="true"] { color: var(--gold); opacity: 1; font-weight: 700; }
+
+.book-cell.shiny { border-color: rgba(255, 214, 245, 0.7); }
+.book-shiny { color: #ffd6f5; }

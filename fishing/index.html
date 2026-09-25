@@ -28,6 +28,8 @@
   </div>
 
   <div class="badges">
+    <span class="badge badge-rank" id="badge-rank" title="熟練度"><span class="r-lv">Lv.1</span><span class="r-name">見習い</span></span>
+    <span class="badge badge-title" id="badge-title" hidden></span>
     <span class="badge" id="badge-spot">池</span>
     <span class="badge" id="badge-time">朝</span>
     <span class="badge badge-weather" id="badge-weather"><span class="w-emoji">☀️</span><span class="w-label">晴れ</span></span>
@@ -44,6 +46,9 @@
     </button>
     <button type="button" class="ghost icon-btn" id="btn-book" aria-haspopup="dialog">
       <span aria-hidden="true">📖</span><span class="btn-label">図鑑</span>
+    </button>
+    <button type="button" class="ghost icon-btn" id="btn-quest" aria-haspopup="dialog">
+      <span aria-hidden="true">🏅</span><span class="btn-label">記録</span>
     </button>
     <button type="button" class="ghost icon-btn only-narrow" id="btn-log" aria-expanded="false" aria-controls="sidebar">
       <span aria-hidden="true">📋</span><span class="btn-label">日誌</span>
@@ -66,10 +71,12 @@
       <div class="result-emoji" id="result-emoji">🐟</div>
       <h2 class="result-name" id="result-name">フナ</h2>
       <p class="result-boss" id="result-boss" hidden></p>
+      <p class="result-shiny" id="result-shiny" hidden>✨ きらめき個体！</p>
       <p class="result-size" id="result-size">20cm / 0.30kg</p>
       <p class="result-title" id="result-title" hidden>大物！</p>
       <p class="result-new" id="result-new" hidden>✨ 自己ベスト更新！</p>
       <p class="result-price"><span id="result-price">0</span>円で売れそうだ</p>
+      <p class="result-xp" id="result-xp" hidden></p>
       <div class="result-actions">
         <button type="button" class="primary" id="btn-sell">売る</button>
         <button type="button" class="ghost" id="btn-release">逃がす</button>
@@ -82,7 +89,7 @@
   <div class="controls">
     <button type="button" class="primary big" id="btn-action">キャスト</button>
     <p class="key-help">
-      <span class="only-wide">スペース：キャスト／合わせ／長押しで巻く・売る　　S：ショップ　　Z：図鑑</span>
+      <span class="only-wide">スペース：キャスト／合わせ／長押しで巻く・売る　　S：ショップ　　Z：図鑑　　A：記録</span>
       <span class="only-narrow">画面をタップ／長押しでも操作できます</span>
     </p>
   </div>
@@ -100,6 +107,10 @@
       <div><dt>売上</dt><dd id="stat-earned">0円</dd></div>
       <div><dt>図鑑</dt><dd id="stat-book">0 / 0</dd></div>
     </dl>
+  </section>
+  <section class="panel" id="daily-panel">
+    <h2>今日のお題 <span class="panel-count" id="daily-count">0 / 3</span></h2>
+    <ul class="daily" id="daily-list"></ul>
   </section>
   <section class="panel grow">
     <h2>釣り日誌</h2>
@@ -136,6 +147,37 @@
     <span class="dlg-money" id="book-progress"></span>
   </header>
   <div class="book" id="book"></div>
+  <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<!-- 記録（熟練度・称号・実績） -->
+<dialog id="dlg-quest">
+  <header class="dlg-head">
+    <h2>🏅 記録</h2>
+    <span class="dlg-money" id="quest-progress"></span>
+  </header>
+
+  <section class="rank-box">
+    <div class="rank-head">
+      <span class="rank-level" id="rank-level">Lv.1</span>
+      <strong class="rank-name" id="rank-name">見習い</strong>
+      <span class="rank-next" id="rank-next"></span>
+    </div>
+    <div class="rank-bar"><span class="rank-fill" id="rank-fill"></span></div>
+    <p class="rank-effect" id="rank-effect"></p>
+  </section>
+
+  <section class="title-box">
+    <h3>称号 <span class="panel-count" id="title-count"></span></h3>
+    <p class="title-empty" id="title-empty">実績を達成すると称号が手に入ります。</p>
+    <div class="title-list" id="title-list"></div>
+  </section>
+
+  <section class="ach-box">
+    <h3>実績 <span class="panel-count" id="ach-count"></span></h3>
+    <div class="ach-list" id="ach-list"></div>
+  </section>
+
   <form method="dialog"><button class="ghost">閉じる</button></form>
 </dialog>
 
