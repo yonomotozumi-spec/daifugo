@@ -14,7 +14,10 @@ import {
   achievementById, achievementState, checkAchievements, dailyProgress, earnedTitles,
   gainXp, progressDaily, rankAt, rankEffects, rankOf, rankProgress, refreshDaily,
   rollDailies, setTitle, shinyKinds, todayKey, totalEffects, xpFor,
+  SAVE_FORMAT, SAVE_VERSION, TUTORIAL, advanceTutorial, exportSave, importSave,
+  saveSummary, tutorialStep,
 } from '../src/engine.js';
+import { SOUND_NAMES, sound } from '../src/sound.js';
 
 const lure = (id) => LURES.find((l) => l.id === id);
 const rod = (id) => RODS.find((r) => r.id === id);
@@ -1447,4 +1450,158 @@ test('大きさのお題は、ヌシに頼らなくても届く', () => {
       }
     }
   }
+});
+
+// ------------------------------------------------------------------ セーブの持ち出し
+
+test('書き出したセーブは、そのまま読み直せる', () => {
+  const p = createPlayer({ money: 12345, xp: 5000, spots: ['pond', 'river'] });
+  recordCatch(p, { fish: fishById('koi'), weightKg: 3, lengthCm: 60, price: 900, shiny: true });
+  refreshDaily(p, '2026-04-01');
+  setTitle(p, null);
+
+  const text = exportSave(p);
+  const head = JSON.parse(text);
+  assert.equal(head.format, SAVE_FORMAT);
+  assert.equal(head.version, SAVE_VERSION);
+  assert.match(head.savedAt, /^\d{4}-\d{2}-\d{2}T/);
+
+  const back = importSave(text);
+  assert.equal(back.ok, true, back.error);
+  assert.equal(back.player.money, 12345);
+  assert.equal(back.player.xp, 5000);
+  assert.equal(shinyKinds(back.player), 1);
+  assert.deepEqual(back.player.spots, ['pond', 'river']);
+  assert.equal(back.player.daily.date, '2026-04-01');
+  assert.equal(back.savedAt, head.savedAt);
+});
+
+test('セーブそのもの（localStorage の中身）を貼っても読める', () => {
+  const p = createPlayer({ money: 700 });
+  const back = importSave(JSON.stringify(p));
+  assert.equal(back.ok, true, back.error);
+  assert.equal(back.player.money, 700);
+  assert.equal(back.savedAt, null);
+});
+
+test('読み込めないデータは、理由をつけて断る', () => {
+  const cases = [
+    ['', 'データが空です'],
+    ['   ', 'データが空です'],
+    ['これはただの文章', 'データの形が違います。コピーし損ねていませんか'],
+    ['{"hello":1}', 'この釣りゲームのデータではないようです'],
+    ['[1,2,3]', 'この釣りゲームのデータではないようです'],
+    [JSON.stringify({ format: SAVE_FORMAT, version: SAVE_VERSION + 5, player: {} }),
+      '新しい版のデータです。アプリを更新してください'],
+    [JSON.stringify({ format: SAVE_FORMAT, version: SAVE_VERSION, player: null }), '中身が入っていません'],
+  ];
+  for (const [text, error] of cases) {
+    const res = importSave(text);
+    assert.equal(res.ok, false, `読めてしまった: ${text}`);
+    assert.equal(res.error, error);
+  }
+});
+
+test('壊れかけのデータでも、読めるところまでは拾う', () => {
+  const res = importSave(JSON.stringify({
+    format: SAVE_FORMAT, version: SAVE_VERSION,
+    player: { money: -5, rods: ['nobe', 'にせ竿'], records: { koi: { count: 2, weightKg: 3, lengthCm: 60, price: 90 } } },
+  }));
+  assert.equal(res.ok, true, res.error);
+  assert.equal(res.player.money, 0);
+  assert.deepEqual(res.player.rods, ['nobe']);
+  assert.equal(Object.keys(res.player.records).length, 1);
+});
+
+test('書き出しの見出しに、いまの状態が出る', () => {
+  const p = createPlayer({ money: 1200, xp: 0 });
+  recordCatch(p, { fish: fishById('funa'), weightKg: 1, lengthCm: 30, price: 100 });
+  const text = saveSummary(p);
+  assert.match(text, /1,200円/);
+  assert.match(text, /図鑑 1 種/);
+  assert.match(text, /Lv\.1 見習い/);
+});
+
+// ------------------------------------------------------------------ 時計いじり
+
+test('端末の時計を戻しても、お題は引き直されない', () => {
+  const p = createPlayer();
+  assert.equal(refreshDaily(p, '2026-05-10'), true);
+  p.daily.quests[0].done = true;
+  const kept = JSON.stringify(p.daily.quests);
+
+  // 前の日に戻しても、お題はそのまま（賞金をもう一度もらえてしまう）
+  assert.equal(refreshDaily(p, '2026-05-09'), false, '時計を戻すと引き直せてしまう');
+  assert.equal(JSON.stringify(p.daily.quests), kept);
+  assert.equal(refreshDaily(p, '2026-05-01'), false);
+
+  // 先に進めば、もちろん新しくなる
+  assert.equal(refreshDaily(p, '2026-05-11'), true);
+  assert.equal(p.daily.quests.some((q) => q.done), false, '新しいお題が達成済みで出ている');
+  assert.equal(p.daily.seen, '2026-05-11');
+
+  // 戻したあとで元の日に来ても、引き直さない
+  refreshDaily(p, '2026-05-02');
+  assert.equal(p.daily.date, '2026-05-11');
+});
+
+// ------------------------------------------------------------------ はじめての案内
+
+test('案内は順番に出て、最後まで行くと二度と出ない', () => {
+  const p = createPlayer();
+  assert.equal(tutorialStep(p).id, 'cast', 'はじめの案内がキャストでない');
+  assert.equal(advanceTutorial(p), false, '何もしていないのに進んだ');
+
+  p.casts = 1;
+  assert.equal(advanceTutorial(p), true);
+  assert.equal(tutorialStep(p).id, 'hook');
+
+  p.tutorial.hooked = true;
+  advanceTutorial(p);
+  assert.equal(tutorialStep(p).id, 'reel', '合わせたのに次へ進まない');
+
+  p.catches = 1;
+  advanceTutorial(p);
+  assert.equal(tutorialStep(p).id, 'sell');
+
+  p.earned = 100;
+  p.rods = ['nobe', 'glass'];
+  p.tutorial.sawQuest = true;
+  assert.equal(advanceTutorial(p), true);
+  assert.equal(p.tutorial.done, true, '条件がそろっても終わらない');
+  assert.equal(tutorialStep(p), null);
+  assert.equal(advanceTutorial(p), false, '終わったのにまだ動く');
+});
+
+test('案内の手順に抜けがない', () => {
+  assert.ok(TUTORIAL.length >= 5);
+  const ids = TUTORIAL.map((t) => t.id);
+  assert.equal(new Set(ids).size, ids.length, '案内の ID が重複している');
+  for (const step of TUTORIAL) {
+    assert.ok(step.text, `${step.id}: 文がない`);
+    assert.equal(typeof step.need, 'function', `${step.id}: 進む条件がない`);
+    assert.equal(step.need(createPlayer()), false, `${step.id}: はじめから条件を満たしている`);
+  }
+});
+
+test('途中で閉じた案内は、もう出てこない', () => {
+  const p = createPlayer();
+  p.tutorial.done = true;
+  assert.equal(tutorialStep(p), null);
+  const back = normalizePlayer(JSON.parse(JSON.stringify(p)));
+  assert.equal(back.tutorial.done, true, '読み直すと案内が復活する');
+});
+
+// ------------------------------------------------------------------ 音
+
+test('音は、鳴らせない環境でも落ちない', () => {
+  // Node には AudioContext が無い。そこで落ちるとゲームごと止まってしまう
+  assert.ok(SOUND_NAMES.length >= 10, `音の種類が少ない（${SOUND_NAMES.length}）`);
+  sound.unlock();
+  for (const name of SOUND_NAMES) sound.play(name);
+  sound.play('そんな音はない');
+  sound.startReel();
+  sound.stopReel();
+  assert.equal(sound.toggle(), true, '消音に切りかえられない');
+  assert.equal(sound.toggle(), false);
 });

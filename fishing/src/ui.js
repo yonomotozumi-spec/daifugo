@@ -10,8 +10,10 @@ import {
   ACHIEVEMENTS, RANKS, SHINY, achievementState, checkAchievements, dailyProgress,
   earnedTitles, gainXp, nextRank, progressDaily, rankEffects, rankOf, rankProgress, refreshDaily,
   setTitle, shinyKinds, todayKey, totalEffects,
+  advanceTutorial, exportSave, importSave, saveSummary, tutorialStep,
 } from './engine.js';
 import { CAST_TIME, LAND_TIME, Scene } from './scene.js';
+import { sound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'fishing:save';
@@ -34,6 +36,8 @@ let fight = null;
 let pending = null;      // 掛かっている魚（抽選済み）
 let holding = false;
 let timer = null;
+let timer2 = null;        // 着水音など、進行とは別に鳴らすもの
+let gestured = false;     // 一度でも画面に触れたか（音と振動はそれから）
 let lastFrame = 0;
 let shopKind = 'rod';
 let displayMoney = player.money;
@@ -229,7 +233,9 @@ function cast() {
   setAction('…', { disabled: true });
   setStatus('キャスト！');
   setHint('');
+  sound.play('cast');
   scene.cast(0.35 + Math.random() * 0.6);
+  timer2 = setTimeout(() => sound.play('splash'), CAST_TIME * 700);
 
   timer = setTimeout(() => {
     setMode(MODE.wait);
@@ -262,6 +268,7 @@ function startBite() {
   });
   setMode(MODE.bite);
   scene.bite();
+  sound.play('bite');
   buzz(35);
   setAction('合わせる！', { hot: true });
   setStatus('きた！ 合わせろ！', 'alert');
@@ -281,6 +288,7 @@ function missBite(text) {
 
 function hook() {
   clearTimeout(timer);
+  markTutorial('hooked');
   const rod = equippedRod(player);
   fight = new Fight({
     fish: pending.fish, rod, sizeRatio: pending.sizeRatio, rng: Math.random,
@@ -296,6 +304,7 @@ function hook() {
   if (pending.fish.boss) {
     // ヌシは別格。名乗りを上げてから始める
     buzz([40, 60, 40, 60, 90]);
+    sound.play('boss');
     scene.shake = 14;
     setStatus(`👑 ${pending.fish.name} — ${pending.fish.title}！`, 'alert');
     setHint(fight.rages.length > 1
@@ -314,6 +323,7 @@ function hook() {
 }
 
 function finishFight(phase) {
+  sound.stopReel();
   const result = pending;
   fight = null;
   pending = null;
@@ -322,6 +332,7 @@ function finishFight(phase) {
 
   if (phase === FIGHT.caught) {
     scene.land(result);
+    sound.play('catch');
     buzz([25, 45, 90]);
     const isNew = recordCatch(player, result, { weather: player.weather });
     result.isNew = isNew;
@@ -329,9 +340,11 @@ function finishFight(phase) {
     announceUnlock(result.fish);
     if (result.shiny) {
       log(`${SHINY.emoji} ${result.fish.name}が光っている！ きらめき個体だ`, 'legendary');
+      sound.play('shiny');
       buzz([30, 40, 30, 40, 60]);
     }
     if (result.xp.leveledUp) {
+      sound.play('level');
       log(`🎖️ 熟練度が上がった！ Lv.${result.xp.rank.level}「${result.xp.rank.name}」`, 'epic');
     }
     reportDaily(progressDaily(player, { type: 'catch', result }));
@@ -347,6 +360,7 @@ function finishFight(phase) {
     ? `ラインが切れた… ${result.fish.name}には竿が負けている`
     : `${result.fish.name}に逃げられた…`;
   scene.fail(phase === FIGHT.snapped ? 'snapped' : 'escaped');
+  sound.play(phase === FIGHT.snapped ? 'snap' : 'escape');
   buzz(phase === FIGHT.snapped ? [70, 50, 70] : 40);
   setStatus(text, 'bad');
   setHint(phase === FIGHT.snapped ? 'もっと強い竿を買おう' : '');
@@ -373,6 +387,7 @@ function backToIdle() {
   setStatus('竿を振って釣りを始めよう');
   setHint('');
   checkDaily();   // 日をまたいで遊んでいたら、ここで新しいお題になる
+  bumpTutorial();
   renderHud();
 }
 
@@ -438,6 +453,7 @@ function sellResult() {
   const result = card.pendingResult;
   if (!result) return;
   scene.coins(14);
+  sound.play('coin');
   buzz(15);
   sell(player, result);
   reportDaily(progressDaily(player, { type: 'sell', price: result.price }));
@@ -478,6 +494,7 @@ function press() {
     case MODE.fight:
       holding = true;
       scene.setHolding(true);
+      sound.startReel();
       break;
     case MODE.result:
       sellResult();
@@ -488,6 +505,7 @@ function press() {
 }
 
 function release() {
+  sound.stopReel();
   if (mode === MODE.fight) {
     holding = false;
     scene.setHolding(false);
@@ -661,6 +679,7 @@ function renderShop() {
       } else {
         const res = buy(player, shopKind, item.id);
         if (!res.ok) return shopMsg(res.error, true);
+        sound.play('buy');
         shopMsg(`${item.name}を購入！`);
         log(`${item.name}を ${yen(item.price)} で購入した`, 'money');
         renderMoney();
@@ -771,6 +790,7 @@ function reportAchievements() {
     if (first) setTitle(player, first.title);
   }
   setStatus(`🏅 実績「${unlocked[0].name}」達成！`, 'good');
+  sound.play('achieve');
   buzz([30, 50, 30]);
   scene.coins(12);
   renderMoney(false);
@@ -784,6 +804,7 @@ function reportDaily(done) {
     log(`📅 お題「${q.label}」達成！ ${yen(q.reward)}をもらった`, 'money');
   }
   if (done.length) {
+    sound.play('coin');
     buzz(40);
     renderMoney(false);
     setStatus(`📅 お題「${done[0].label}」達成！`, 'good');
@@ -842,6 +863,7 @@ function renderDaily() {
 }
 
 function openQuest() {
+  markTutorial('sawQuest');
   // 開いた時点で届いているものは、ここでも拾っておく
   reportAchievements();
   renderQuest();
@@ -935,6 +957,119 @@ function renderAchievements() {
     list.append(card);
   }
   $('ach-count').textContent = `${player.achieved.length} / ${ACHIEVEMENTS.length}`;
+}
+
+// ---------------------------------------------------------------- はじめての案内
+
+/** いま出す案内を画面に反映する。 */
+function renderCoach() {
+  const step = tutorialStep(player);
+  const box = $('coach');
+  box.hidden = !step;
+  if (step) $('coach-text').textContent = step.text;
+}
+
+/** 条件を満たしていれば案内を進める。 */
+function bumpTutorial() {
+  if (advanceTutorial(player)) {
+    renderCoach();
+    save();
+  }
+}
+
+/** 案内に「ここまで見た」の印をつける。 */
+function markTutorial(key) {
+  const state = player.tutorial;
+  if (!state || state.done || state[key]) return;
+  state[key] = true;
+  bumpTutorial();
+}
+
+// ---------------------------------------------------------------- 音
+
+function renderSound() {
+  const on = !sound.muted;
+  $('sound-icon').textContent = on ? '🔊' : '🔇';
+  $('sound-label').textContent = on ? '音' : '消音';
+  $('btn-sound').setAttribute('aria-pressed', String(!on));
+  $('btn-sound').title = on ? '音を消す' : '音を出す';
+}
+
+// ---------------------------------------------------------------- バックアップ
+
+function backupMsg(text, bad = false) {
+  const el = $('backup-msg');
+  el.textContent = text;
+  el.className = `shop-msg${text ? (bad ? ' bad' : ' good') : ''}`;
+}
+
+function openBackup() {
+  $('backup-out').value = exportSave(player);
+  $('backup-summary').textContent = saveSummary(player);
+  $('backup-in').value = '';
+  backupMsg('');
+  $('dlg-backup').showModal();
+}
+
+async function copyBackup() {
+  const box = $('backup-out');
+  try {
+    await navigator.clipboard.writeText(box.value);
+    backupMsg('コピーしました。メモ帳などに貼って保存してください');
+  } catch {
+    // 書き込みを許してくれない端末では、選択だけしておく
+    box.focus();
+    box.select();
+    backupMsg('選択しました。長押し（Ctrl+C）でコピーしてください');
+  }
+}
+
+function downloadBackup() {
+  const name = `fishing-save-${todayKey()}.json`;
+  try {
+    const url = URL.createObjectURL(new Blob([$('backup-out').value], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    backupMsg(`${name} を保存しました`);
+  } catch {
+    backupMsg('この端末では保存できません。コピーを使ってください', true);
+  }
+}
+
+/** 読み込んだ記録に差し替える。 */
+function loadBackup(text) {
+  const res = importSave(text);
+  if (!res.ok) return backupMsg(res.error, true);
+
+  clearTimeout(timer);
+  clearTimeout(timer2);
+  sound.stopReel();
+  player = res.player;
+  fight = null;
+  pending = null;
+  holding = false;
+  happening = null;
+  charmState = null;
+  announcedSpot = null;
+  displayMoney = player.money;
+
+  hideResult();
+  checkDaily({ quiet: true });
+  renderMoney(false);
+  renderHud();
+  renderDaily();
+  renderCoach();
+  backToIdle();
+  save();
+
+  const when = res.savedAt ? `（${res.savedAt.slice(0, 10)} の控え）` : '';
+  backupMsg(`読み込みました${when}： ${saveSummary(player)}`);
+  log(`💾 バックアップを読み込んだ。${saveSummary(player)}`, 'epic');
+  setStatus('バックアップを読み込んだ', 'good');
+  sound.play('achieve');
 }
 
 // ---------------------------------------------------------------- 図鑑
@@ -1035,6 +1170,8 @@ function openReset() {
 /** 保存を消して、最初の状態に戻す。 */
 function resetSave() {
   clearTimeout(timer);
+  clearTimeout(timer2);
+  sound.stopReel();
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* 消せなくても続ける */ }
 
   player = createPlayer();
@@ -1059,8 +1196,12 @@ function resetSave() {
 
 // ---------------------------------------------------------------- アプリとして使う
 
-/** 手にも伝える。対応していない端末では黙って無視される。 */
+/**
+ * 手にも伝える。対応していない端末では黙って無視される。
+ * 指が一度も触れていないうちは、ブラウザが断ってくる（起動直後の実績など）ので鳴らさない。
+ */
 function buzz(pattern) {
+  if (!gestured) return;
   try { navigator.vibrate?.(pattern); } catch { /* 触覚がなくても遊べる */ }
 }
 
@@ -1192,6 +1333,8 @@ function init() {
   const firstRun = player.casts === 0 && !player.daily?.date;
   checkDaily({ quiet: firstRun });
   renderDaily();
+  renderSound();
+  renderCoach();
   reportAchievements();
   checkNewSpot();
   setAction('キャスト');
@@ -1217,7 +1360,7 @@ function init() {
     if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
       if (!e.repeat) press();
-      else if (mode === MODE.fight) { holding = true; scene.setHolding(true); }
+      else if (mode === MODE.fight) { holding = true; scene.setHolding(true); sound.startReel(); }
     } else if (e.key === 's' || e.key === 'S') {
       openShop();
     } else if (e.key === 'z' || e.key === 'Z') {
@@ -1241,6 +1384,37 @@ function init() {
   $('btn-shop').addEventListener('click', () => openShop());
   $('btn-book').addEventListener('click', openBook);
   $('btn-quest').addEventListener('click', openQuest);
+  $('btn-sound').addEventListener('click', () => {
+    sound.toggle();
+    renderSound();
+    if (!sound.muted) sound.play('coin');
+  });
+
+  $('btn-backup').addEventListener('click', openBackup);
+  $('backup-copy').addEventListener('click', copyBackup);
+  $('backup-download').addEventListener('click', downloadBackup);
+  $('backup-load').addEventListener('click', () => loadBackup($('backup-in').value));
+  $('backup-file').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      loadBackup(await file.text());
+    } catch {
+      backupMsg('ファイルを読めませんでした', true);
+    }
+    e.target.value = '';
+  });
+
+  $('coach-skip').addEventListener('click', () => {
+    player.tutorial.done = true;
+    renderCoach();
+    save();
+  });
+
+  // スマホのブラウザは、指が触れるまで音を鳴らさせてくれない
+  const wake = () => { gestured = true; sound.unlock(); };
+  window.addEventListener('pointerdown', wake, { once: true });
+  window.addEventListener('keydown', wake, { once: true });
   $('btn-sell').addEventListener('click', sellResult);
   $('btn-release').addEventListener('click', releaseResult);
 
@@ -1264,7 +1438,8 @@ function init() {
     scene,
     save,
     reset: resetSave,
-    render() { renderMoney(false); renderHud(); renderDaily(); },
+    render() { renderMoney(false); renderHud(); renderDaily(); renderCoach(); },
+    sound,
   };
 
   lastFrame = performance.now();

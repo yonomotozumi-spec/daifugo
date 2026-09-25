@@ -402,6 +402,35 @@ async function checkQuestScreen() {
   if (daily.over > 1) fail(`日誌が ${daily.over}px はみ出している`);
   if (daily.right > width) fail(`お題が画面からはみ出している（右端 ${daily.right}px）`);
   await page.screenshot({ path: `${OUT}mobile-daily.png` });
+
+  // 案内の吹き出しが、水面のタップを食べていないこと
+  const coach = await page.evaluate(() => {
+    const el = document.getElementById('coach');
+    return { hidden: el.hidden, through: getComputedStyle(el).pointerEvents === 'none' };
+  });
+  if (!coach.hidden && !coach.through) fail('はじめての案内がタップをさえぎっている');
+
+  // バックアップの画面も狭い幅で読めること
+  await page.tap('#btn-backup');
+  await page.waitForTimeout(450);
+  const backup = await page.evaluate(() => {
+    const out = document.getElementById('backup-out');
+    return {
+      hasText: out.value.includes('fishing-save'),
+      over: document.documentElement.scrollWidth - window.innerWidth,
+      right: Math.round(out.getBoundingClientRect().right),
+      buttons: [...document.querySelectorAll('#dlg-backup button, #dlg-backup .file-btn')]
+        .map((b) => Math.round(b.getBoundingClientRect().height)),
+    };
+  });
+  if (!backup.hasText) fail('書き出しの中身が出ていない');
+  if (backup.over > 1) fail(`バックアップの画面が ${backup.over}px はみ出している`);
+  if (backup.right > width) fail(`書き出し欄が画面からはみ出している（右端 ${backup.right}px）`);
+  const small = backup.buttons.filter((h) => h < 36);
+  if (small.length) fail(`指で押すには小さいボタンがある（${small.join(', ')}px）`);
+  await page.screenshot({ path: `${OUT}mobile-backup.png` });
+  console.log(`バックアップの画面: ${width}px でボタン ${backup.buttons.length} 個が押せる大きさ`);
+
   await ctx.close();
   console.log(`記録の画面: ${width}px で実績 ${quest.cards} 件・称号 ${quest.titles} 個／お題「${daily.text}」`);
 }

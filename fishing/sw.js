@@ -4,7 +4,7 @@
  * 中身を更新したときは CACHE の版を上げること。
  */
 
-const CACHE = 'fishing-v10';
+const CACHE = 'fishing-v11';
 
 const ASSETS = [
   './',
@@ -14,6 +14,7 @@ const ASSETS = [
   './src/ui.js',
   './src/engine.js',
   './src/scene.js',
+  './src/sound.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

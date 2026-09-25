@@ -50,6 +50,9 @@
     <button type="button" class="ghost icon-btn" id="btn-quest" aria-haspopup="dialog">
       <span aria-hidden="true">🏅</span><span class="btn-label">記録</span>
     </button>
+    <button type="button" class="ghost icon-btn" id="btn-sound" aria-pressed="false" title="音を消す">
+      <span aria-hidden="true" id="sound-icon">🔊</span><span class="btn-label" id="sound-label">音</span>
+    </button>
     <button type="button" class="ghost icon-btn only-narrow" id="btn-log" aria-expanded="false" aria-controls="sidebar">
       <span aria-hidden="true">📋</span><span class="btn-label">日誌</span>
     </button>
@@ -64,6 +67,12 @@
 
     <p class="hud-status" id="status" role="status">竿を振って釣りを始めよう</p>
     <p class="event-banner" id="event-banner" role="status" hidden></p>
+
+    <!-- はじめての案内。数投ぶんだけ出る -->
+    <div class="coach" id="coach" hidden>
+      <p class="coach-text" id="coach-text"></p>
+      <button type="button" class="coach-skip" id="coach-skip">案内を閉じる</button>
+    </div>
 
     <!-- 釣果カード -->
     <div class="result-card" id="result-card" aria-live="polite" hidden>
@@ -116,6 +125,7 @@
     <h2>釣り日誌</h2>
     <ol class="log" id="log" aria-live="polite"></ol>
   </section>
+  <button type="button" class="ghost reset-btn" id="btn-backup" aria-haspopup="dialog">💾 バックアップ</button>
   <button type="button" class="ghost reset-btn" id="btn-reset" aria-haspopup="dialog">🗑️ はじめから</button>
   <a class="topbar-link only-narrow sheet-link" href="../">🃏 大富豪であそぶ</a>
   <a class="topbar-link only-narrow sheet-link" href="../poker/">♠ ポーカーであそぶ</a>
@@ -178,6 +188,44 @@
     <div class="ach-list" id="ach-list"></div>
   </section>
 
+  <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<!-- セーブの持ち出し -->
+<dialog id="dlg-backup">
+  <header class="dlg-head">
+    <h2>💾 バックアップ</h2>
+    <span class="dlg-money" id="backup-summary"></span>
+  </header>
+  <p class="backup-note">
+    釣りの記録はこの端末の中だけに保存されています。
+    ブラウザのデータを消したり、機種を変えたりすると失われるので、
+    ときどき書き出して控えを取っておくと安心です。
+  </p>
+
+  <section class="backup-box">
+    <h3>書き出す</h3>
+    <textarea class="backup-text" id="backup-out" readonly rows="4" spellcheck="false"></textarea>
+    <menu class="backup-actions">
+      <button type="button" class="ghost" id="backup-copy">コピーする</button>
+      <button type="button" class="ghost" id="backup-download">ファイルに保存</button>
+    </menu>
+  </section>
+
+  <section class="backup-box">
+    <h3>読み込む</h3>
+    <p class="backup-warn">読み込むと、いまの記録は上書きされます。</p>
+    <textarea class="backup-text" id="backup-in" rows="4" spellcheck="false" placeholder="書き出したデータを貼り付ける"></textarea>
+    <menu class="backup-actions">
+      <label class="ghost file-btn">
+        ファイルから読む
+        <input type="file" id="backup-file" accept="application/json,.json,text/plain" hidden>
+      </label>
+      <button type="button" class="primary" id="backup-load">読み込む</button>
+    </menu>
+  </section>
+
+  <p class="shop-msg" id="backup-msg" role="status"></p>
   <form method="dialog"><button class="ghost">閉じる</button></form>
 </dialog>
 

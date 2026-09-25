@@ -35,6 +35,16 @@ await page.waitForFunction(() => window.fishing);
 await page.waitForTimeout(600);
 await shot('01-idle');
 
+// ---------------------------------------------------------------- はじめての案内
+
+const coach = await page.evaluate(() => ({
+  shown: !document.getElementById('coach').hidden,
+  text: document.getElementById('coach-text').textContent,
+}));
+if (!coach.shown) throw new Error('はじめての案内が出ていない');
+if (!coach.text.includes('キャスト')) throw new Error(`案内の中身がちがう: ${coach.text}`);
+console.log(`案内: 「${coach.text}」`);
+
 // ---------------------------------------------------------------- 3 匹釣る
 
 let caught = 0;
@@ -379,6 +389,83 @@ if (!book.progress.includes('✨')) throw new Error(`図鑑の見出しにきら
 console.log(`図鑑: ${book.progress}`);
 await page.keyboard.press('Escape');
 await page.waitForTimeout(300);
+
+// ---------------------------------------------------------------- バックアップ
+
+await page.evaluate(() => { window.fishing.player.money = 777000; window.fishing.save(); });
+await page.click('#btn-backup');
+await page.waitForTimeout(400);
+const backup = await page.evaluate(() => ({
+  text: document.getElementById('backup-out').value,
+  summary: document.getElementById('backup-summary').textContent,
+}));
+if (!backup.text.includes('fishing-save')) throw new Error(`書き出しの形がちがう: ${backup.text.slice(0, 60)}`);
+if (!backup.summary.includes('777,000円')) throw new Error(`見出しに所持金が出ていない: ${backup.summary}`);
+await shot('13-backup');
+
+// 記録を変えてから読み込むと、書き出した時点まで戻る
+await page.evaluate(() => {
+  window.fishing.player.money = 1;
+  window.fishing.player.records = {};
+  window.fishing.save();
+});
+await page.evaluate((text) => {
+  document.getElementById('backup-in').value = text;
+}, backup.text);
+await page.click('#backup-load');
+await page.waitForTimeout(600);
+const restored = await page.evaluate(() => ({
+  money: window.fishing.player.money,
+  records: Object.keys(window.fishing.player.records).length,
+  saved: JSON.parse(localStorage.getItem('fishing:save')).money,
+  msg: document.getElementById('backup-msg').textContent,
+}));
+if (restored.money !== 777000) throw new Error(`読み込んでも戻らない: ${restored.money}`);
+if (restored.records < 1) throw new Error('図鑑が戻っていない');
+if (restored.saved !== 777000) throw new Error('読み込んだ内容が保存されていない');
+console.log(`バックアップ: 書き出して読み直すと所持金と図鑑が戻った（${restored.msg.slice(0, 40)}）`);
+
+// おかしなデータは断る
+await page.evaluate(() => { document.getElementById('backup-in').value = 'こわれたデータ'; });
+await page.click('#backup-load');
+await page.waitForTimeout(300);
+const refused = await page.evaluate(() => ({
+  msg: document.getElementById('backup-msg').textContent,
+  bad: document.getElementById('backup-msg').className.includes('bad'),
+  money: window.fishing.player.money,
+}));
+if (!refused.bad) throw new Error(`こわれたデータを読んでしまった: ${refused.msg}`);
+if (refused.money !== 777000) throw new Error('断ったのに記録が変わった');
+console.log(`バックアップ: こわれたデータは「${refused.msg}」と断った`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+
+// ---------------------------------------------------------------- 音
+
+const soundState = await page.evaluate(() => ({
+  muted: window.fishing.sound.muted,
+  icon: document.getElementById('sound-icon').textContent,
+}));
+if (soundState.muted) throw new Error('はじめから消音になっている');
+if (soundState.icon !== '🔊') throw new Error(`音の印がちがう: ${soundState.icon}`);
+
+await page.click('#btn-sound');
+await page.waitForTimeout(250);
+const muted = await page.evaluate(() => ({
+  muted: window.fishing.sound.muted,
+  icon: document.getElementById('sound-icon').textContent,
+  saved: localStorage.getItem('fishing:muted'),
+}));
+if (!muted.muted || muted.icon !== '🔇') throw new Error(`消音に切りかわらない: ${JSON.stringify(muted)}`);
+if (muted.saved !== '1') throw new Error('消音が保存されていない');
+
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForFunction(() => window.fishing);
+const afterReload = await page.evaluate(() => document.getElementById('sound-icon').textContent);
+if (afterReload !== '🔇') throw new Error('リロードで消音が元に戻った');
+await page.click('#btn-sound');
+await page.waitForTimeout(250);
+console.log('音: 切りかえと保存ができ、リロードしても覚えている');
 
 if (errors.length) {
   console.error('コンソールエラー:', errors);
