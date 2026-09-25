@@ -13,7 +13,8 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 // 値段や名前はゲーム側から読む（バランス調整のたびに直さなくて済むように）
-import { ACHIEVEMENTS, FISH, GEAR, RODS, SPOTS, WEATHERS, rankAt } from '../src/engine.js';
+import { ACHIEVEMENTS, FISH, GEAR, HAPTICS, RODS, SPOTS, WEATHERS, hapticFor, rankAt } from '../src/engine.js';
+import { SOUND_NAMES } from '../src/sound.js';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8123/fishing/';
 const OUT = new URL('./screenshots/', import.meta.url).pathname;
@@ -466,6 +467,116 @@ if (afterReload !== '🔇') throw new Error('リロードで消音が元に戻�
 await page.click('#btn-sound');
 await page.waitForTimeout(250);
 console.log('音: 切りかえと保存ができ、リロードしても覚えている');
+
+// ---------------------------------------------------------------- 音と振動の設定
+
+await page.click('#btn-settings');
+await page.waitForTimeout(400);
+const settings = await page.evaluate(() => ({
+  sound: document.getElementById('set-sound').checked,
+  ambience: document.getElementById('set-ambience').checked,
+  haptics: document.getElementById('set-haptics').checked,
+  hapticsOff: document.getElementById('set-haptics').disabled,
+  note: document.getElementById('haptics-note').textContent,
+  canVibrate: 'vibrate' in navigator,
+}));
+if (!settings.sound) throw new Error('効果音の切りかえが合っていない');
+if (!settings.ambience) throw new Error('環境音がはじめから切れている');
+if (settings.canVibrate === settings.hapticsOff) throw new Error(`振動の切りかえが端末と合っていない: ${settings.note}`);
+await shot('14-settings');
+
+// 環境音だけ切っても、効果音は残る
+await page.click('#set-ambience');
+await page.waitForTimeout(300);
+const ambience = await page.evaluate(() => ({
+  on: window.fishing.sound.ambienceOn,
+  saved: localStorage.getItem('fishing:ambience'),
+  sound: !window.fishing.sound.muted,
+}));
+if (ambience.on || ambience.saved !== '0') throw new Error('環境音を切っても保存されない');
+if (!ambience.sound) throw new Error('環境音を切ると効果音まで消える');
+await page.click('#set-ambience');
+await page.waitForTimeout(200);
+console.log(`設定: 効果音 ${SOUND_NAMES.length} 種／環境音の切りかえ／振動「${settings.note}」`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+
+// ---------------------------------------------------------------- 釣れたときの振動
+
+// navigator.vibrate を差し替えて、実際に呼ばれるパターンを見る
+await page.evaluate(() => {
+  window.__vibes = [];
+  Object.defineProperty(navigator, 'vibrate', {
+    configurable: true,
+    value: (pattern) => { window.__vibes.push(pattern); return true; },
+  });
+});
+await page.evaluate(() => { window.fishing.player.spot = 'pond'; window.fishing.render(); });
+
+let vibed = null;
+for (let step = 0; step < 900 && !vibed; step++) {
+  const m = await mode();
+  if (m === 'idle' || m === 'bite') {
+    await page.click('#btn-action');
+  } else if (m === 'fight') {
+    const hold = await page.evaluate(() => {
+      const f = window.fishing.fight;
+      return f ? f.barY > f.fishY : false;
+    });
+    await page.keyboard[hold ? 'down' : 'up']('Space');
+  } else if (m === 'result') {
+    await page.keyboard.up('Space');
+    vibed = await page.evaluate(() => {
+      const card = document.getElementById('result-card');
+      const r = card.pendingResult;
+      return {
+        vibes: window.__vibes,
+        fish: r.fish.id,
+        junk: Boolean(r.fish.junk),
+        boss: Boolean(r.fish.boss),
+        shiny: Boolean(r.shiny),
+        isNew: Boolean(r.isNew),
+        sizeRatio: r.sizeRatio,
+      };
+    });
+  }
+  await page.waitForTimeout(110);
+}
+await page.keyboard.up('Space');
+if (!vibed) throw new Error('振動の確認で 1 匹も釣れなかった');
+
+const wantedBuzz = hapticFor({
+  fish: FISH.find((f) => f.id === vibed.fish),
+  shiny: vibed.shiny,
+  isNew: vibed.isNew,
+  sizeRatio: vibed.sizeRatio,
+});
+const shown = vibed.vibes.map((v) => JSON.stringify(v));
+if (!shown.includes(JSON.stringify(HAPTICS.bite))) throw new Error(`アタリで震えていない: ${shown.join(' ')}`);
+if (!shown.includes(JSON.stringify(wantedBuzz))) {
+  throw new Error(`釣れたときの震えかたが違う（欲しい ${JSON.stringify(wantedBuzz)} / 実際 ${shown.join(' ')}）`);
+}
+console.log(`振動: ${vibed.fish} を釣って ${JSON.stringify(wantedBuzz)} で震えた（${vibed.vibes.length} 回）`);
+
+// 設定で切ると震えなくなる
+await page.click('#btn-settings');
+await page.waitForTimeout(300);
+await page.click('#set-haptics');
+await page.waitForTimeout(200);
+await page.evaluate(() => { window.__vibes = []; });
+await page.click('#set-try');
+await page.waitForTimeout(300);
+const afterOff = await page.evaluate(() => ({
+  vibes: window.__vibes.length,
+  saved: localStorage.getItem('fishing:haptics'),
+}));
+if (afterOff.vibes > 0) throw new Error('振動を切っても震える');
+if (afterOff.saved !== '0') throw new Error('振動の設定が保存されない');
+await page.click('#set-haptics');
+await page.waitForTimeout(200);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+console.log('振動: 設定で切ると震えなくなり、設定は保存される');
 
 if (errors.length) {
   console.error('コンソールエラー:', errors);

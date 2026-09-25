@@ -1596,6 +1596,50 @@ export function advanceTutorial(player) {
   return moved;
 }
 
+// ---------------------------------------------------------------- 手ごたえ（振動）
+
+/**
+ * 振動のパターン（ミリ秒。鳴らす・休む・鳴らす…の順）。
+ * 何が起きたのかを、画面を見ていなくても指で分かるように変えてある。
+ *
+ * iPhone / iPad の Safari は振動に対応していないので、Android などでだけ効く。
+ */
+export const HAPTICS = {
+  bite: [35],
+  catch: [25, 45, 90],
+  big: [30, 40, 30, 40, 140],
+  boss: [60, 60, 60, 60, 220],
+  shiny: [20, 30, 20, 30, 20, 30, 140],
+  record: [25, 40, 25, 40, 110],
+  junk: [20],
+  snap: [70, 50, 70],
+  escape: [40],
+  level: [30, 50, 30, 50, 90],
+  achieve: [30, 50, 30],
+  quest: [25, 40, 60],
+  rage: [80, 40, 80],
+  dash: [16],
+  hook: [40, 60, 40, 60, 90],
+  heavy: [20],      // ふつうの魚に掛かった合図
+  sell: [15],       // 売れた
+  event: [20, 40, 20],  // 大漁タイムなどの始まり
+};
+
+/**
+ * 釣れた 1 匹に合う振動を選ぶ。
+ * 珍しいものほど長く、刻みも増える。
+ */
+export function hapticFor(result) {
+  const fish = result?.fish;
+  if (!fish) return HAPTICS.catch;
+  if (fish.boss) return HAPTICS.boss;
+  if (result.shiny) return HAPTICS.shiny;
+  if (fish.junk) return HAPTICS.junk;
+  if (result.isNew) return HAPTICS.record;
+  if ((result.sizeRatio ?? 0) >= 0.7) return HAPTICS.big;
+  return HAPTICS.catch;
+}
+
 // ---------------------------------------------------------------- 表示用
 
 export const yen = (v) => `${Math.round(v).toLocaleString('ja-JP')}円`;

@@ -125,6 +125,7 @@
     <h2>釣り日誌</h2>
     <ol class="log" id="log" aria-live="polite"></ol>
   </section>
+  <button type="button" class="ghost reset-btn" id="btn-settings" aria-haspopup="dialog">⚙️ 音と振動</button>
   <button type="button" class="ghost reset-btn" id="btn-backup" aria-haspopup="dialog">💾 バックアップ</button>
   <button type="button" class="ghost reset-btn" id="btn-reset" aria-haspopup="dialog">🗑️ はじめから</button>
   <a class="topbar-link only-narrow sheet-link" href="../">🃏 大富豪であそぶ</a>
@@ -188,6 +189,45 @@
     <div class="ach-list" id="ach-list"></div>
   </section>
 
+  <form method="dialog"><button class="ghost">閉じる</button></form>
+</dialog>
+
+<!-- 音と振動の設定 -->
+<dialog id="dlg-settings">
+  <header class="dlg-head"><h2>⚙️ 音と振動</h2></header>
+
+  <ul class="switch-list">
+    <li class="switch-row">
+      <label for="set-sound">
+        <strong>🔊 効果音</strong>
+        <small>キャスト・アタリ・巻き上げ・釣り上げなど 23 種類</small>
+      </label>
+      <input type="checkbox" id="set-sound" class="switch" checked>
+    </li>
+    <li class="switch-row">
+      <label for="set-ambience">
+        <strong>🌊 環境音</strong>
+        <small>水面・雨・風。天気と釣り場で変わります</small>
+      </label>
+      <input type="checkbox" id="set-ambience" class="switch" checked>
+    </li>
+    <li class="switch-row">
+      <label for="set-haptics">
+        <strong>📳 振動</strong>
+        <small id="haptics-note">釣れた魚によって震えかたが変わります</small>
+      </label>
+      <input type="checkbox" id="set-haptics" class="switch" checked>
+    </li>
+  </ul>
+
+  <p class="settings-note">
+    スマホのブラウザは、画面に一度触れるまで音を鳴らしてくれません。
+    音が出ないときは、どこかをタップしてからもう一度おためしください。
+  </p>
+
+  <menu class="backup-actions">
+    <button type="button" class="ghost" id="set-try">試しに鳴らす</button>
+  </menu>
   <form method="dialog"><button class="ghost">閉じる</button></form>
 </dialog>
 

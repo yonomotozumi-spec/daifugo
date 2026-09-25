@@ -11,6 +11,7 @@ import {
   earnedTitles, gainXp, nextRank, progressDaily, rankEffects, rankOf, rankProgress, refreshDaily,
   setTitle, shinyKinds, todayKey, totalEffects,
   advanceTutorial, exportSave, importSave, saveSummary, tutorialStep,
+  HAPTICS, hapticFor,
 } from './engine.js';
 import { CAST_TIME, LAND_TIME, Scene } from './scene.js';
 import { sound } from './sound.js';
@@ -39,6 +40,7 @@ let timer = null;
 let timer2 = null;        // 着水音など、進行とは別に鳴らすもの
 let gestured = false;     // 一度でも画面に触れたか（音と振動はそれから）
 let lastFrame = 0;
+let lastBolt = 0;         // 稲妻が光った瞬間をつかまえる
 let shopKind = 'rod';
 let displayMoney = player.money;
 let announcedSpot = null;   // 「行けるようになった」と知らせ済みの釣り場
@@ -147,6 +149,7 @@ function renderHud() {
   scene.setSpot(player.spot);
   scene.setTime(time.id);
   scene.setWeather(player.weather);
+  sound.setScene({ weather: player.weather, spot: player.spot });
   renderEvent();
 }
 
@@ -173,6 +176,7 @@ function announceUnlock(fish) {
   const opened = SPOTS.find((s) => s.require === fish.id);
   if (!opened) return;
   announcedSpot = null;
+  sound.play('unlock');
   log(`🔓 ${opened.name}への道が開いた！ ${yen(opened.price)}で行ける`, 'legendary');
 }
 
@@ -222,7 +226,7 @@ function cast() {
       happening = { event, left: event.casts };
       log(event.start, 'epic');
       setStatus(`${event.emoji} ${event.start}`, 'alert');
-      buzz([20, 40, 20]);
+      buzz(HAPTICS.event);
     }
   }
 
@@ -269,7 +273,7 @@ function startBite() {
   setMode(MODE.bite);
   scene.bite();
   sound.play('bite');
-  buzz(35);
+  buzz(HAPTICS.bite);
   setAction('合わせる！', { hot: true });
   setStatus('きた！ 合わせろ！', 'alert');
   timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), hookWindow(totalEffects(player)) * 1000);
@@ -279,6 +283,8 @@ function missBite(text) {
   clearTimeout(timer);
   pending = null;
   setMode(MODE.busy);
+  sound.play('miss');
+  buzz(HAPTICS.escape);
   scene.fail('escaped');
   setStatus(text, 'bad');
   setHint('');
@@ -303,7 +309,7 @@ function hook() {
 
   if (pending.fish.boss) {
     // ヌシは別格。名乗りを上げてから始める
-    buzz([40, 60, 40, 60, 90]);
+    buzz(HAPTICS.hook);
     sound.play('boss');
     scene.shake = 14;
     setStatus(`👑 ${pending.fish.name} — ${pending.fish.title}！`, 'alert');
@@ -314,7 +320,7 @@ function hook() {
     return;
   }
 
-  buzz(20);
+  buzz(HAPTICS.heavy);
   const heavy = pending.fish.power > rod.power;
   setStatus(heavy ? '重い！ かなりの大物だ' : '掛かった！ 巻き上げろ！', heavy ? 'alert' : '');
   if (heavy) setHint('竿が負けている。巻きっぱなしはライン切れ');
@@ -332,19 +338,20 @@ function finishFight(phase) {
 
   if (phase === FIGHT.caught) {
     scene.land(result);
-    sound.play('catch');
-    buzz([25, 45, 90]);
     const isNew = recordCatch(player, result, { weather: player.weather });
     result.isNew = isNew;
+    sound.play(result.fish.junk ? 'junk' : result.fish.boss ? 'unlock' : isNew ? 'record' : 'catch');
+    // 何が釣れたかで手ごたえを変える（ヌシ・きらめき・自己ベスト・大物・ゴミ）
+    buzz(hapticFor(result));
     result.xp = gainXp(player, result);
     announceUnlock(result.fish);
     if (result.shiny) {
       log(`${SHINY.emoji} ${result.fish.name}が光っている！ きらめき個体だ`, 'legendary');
       sound.play('shiny');
-      buzz([30, 40, 30, 40, 60]);
     }
     if (result.xp.leveledUp) {
       sound.play('level');
+      buzz(HAPTICS.level);
       log(`🎖️ 熟練度が上がった！ Lv.${result.xp.rank.level}「${result.xp.rank.name}」`, 'epic');
     }
     reportDaily(progressDaily(player, { type: 'catch', result }));
@@ -361,7 +368,7 @@ function finishFight(phase) {
     : `${result.fish.name}に逃げられた…`;
   scene.fail(phase === FIGHT.snapped ? 'snapped' : 'escaped');
   sound.play(phase === FIGHT.snapped ? 'snap' : 'escape');
-  buzz(phase === FIGHT.snapped ? [70, 50, 70] : 40);
+  buzz(phase === FIGHT.snapped ? HAPTICS.snap : HAPTICS.escape);
   setStatus(text, 'bad');
   setHint(phase === FIGHT.snapped ? 'もっと強い竿を買おう' : '');
   log(text, 'bad');
@@ -454,7 +461,7 @@ function sellResult() {
   if (!result) return;
   scene.coins(14);
   sound.play('coin');
-  buzz(15);
+  buzz(HAPTICS.sell);
   sell(player, result);
   reportDaily(progressDaily(player, { type: 'sell', price: result.price }));
   reportAchievements();
@@ -470,6 +477,7 @@ function releaseResult() {
   const card = $('result-card');
   const result = card.pendingResult;
   if (!result) return;
+  sound.play('release');
   scene.ring(scene.lure.x, scene.waterY(), 1.2);
   scene.splash(scene.lure.x, scene.waterY(), 10, 1);
   log(`${result.fish.name}を逃がした（記録は残る）`);
@@ -791,7 +799,7 @@ function reportAchievements() {
   }
   setStatus(`🏅 実績「${unlocked[0].name}」達成！`, 'good');
   sound.play('achieve');
-  buzz([30, 50, 30]);
+  buzz(HAPTICS.achieve);
   scene.coins(12);
   renderMoney(false);
   renderHud();
@@ -804,8 +812,8 @@ function reportDaily(done) {
     log(`📅 お題「${q.label}」達成！ ${yen(q.reward)}をもらった`, 'money');
   }
   if (done.length) {
-    sound.play('coin');
-    buzz(40);
+    sound.play('quest');
+    buzz(HAPTICS.quest);
     renderMoney(false);
     setStatus(`📅 お題「${done[0].label}」達成！`, 'good');
   }
@@ -995,6 +1003,24 @@ function renderSound() {
   $('btn-sound').title = on ? '音を消す' : '音を出す';
 }
 
+/** 音と振動の設定を画面に合わせる。 */
+function renderSettings() {
+  $('set-sound').checked = !sound.muted;
+  $('set-ambience').checked = sound.ambienceOn;
+  $('set-ambience').disabled = sound.muted;
+  $('set-haptics').checked = hapticsOn && canVibrate();
+  $('set-haptics').disabled = !canVibrate();
+  $('haptics-note').textContent = canVibrate()
+    ? '釣れた魚によって震えかたが変わります'
+    : 'この端末は振動に対応していません（iPhone・iPad の Safari など）';
+}
+
+function openSettings() {
+  renderSettings();
+  sound.play('open');
+  $('dlg-settings').showModal();
+}
+
 // ---------------------------------------------------------------- バックアップ
 
 function backupMsg(text, bad = false) {
@@ -1124,16 +1150,25 @@ function frame(now) {
 
   if (mode === MODE.fight && fight) {
     const phase = fight.update(dt, holding);
+    // 張りつめるほどリールの音が高くなる（画面を見ていなくても分かる）
+    if (holding) sound.setReelTension(fight.strain);
+    // 魚が走ったら、短く手に伝える
+    if (fight.dash > 0.9) tug(HAPTICS.dash);
     if (fight.justEnraged) {
       setStatus('ヌシが暴れ出した！', 'bad');
       setHint('速くなる。バーを先回りさせる');
       scene.shake = 16;
       scene.flash = 0.4;
       scene.flashColor = '255,120,110';
-      buzz([80, 40, 80]);
+      sound.play('rage');
+      buzz(HAPTICS.rage);
     }
     if (phase !== FIGHT.fighting) finishFight(phase);
   }
+
+  // 稲妻が光った瞬間に雷を鳴らす
+  if (scene.bolt > lastBolt) sound.play('thunder');
+  lastBolt = scene.bolt;
 }
 
 // ---------------------------------------------------------------- はじめから
@@ -1196,13 +1231,36 @@ function resetSave() {
 
 // ---------------------------------------------------------------- アプリとして使う
 
+const HAPTIC_KEY = 'fishing:haptics';
+
+/** この端末が振動できるか（iPhone / iPad の Safari は対応していない）。 */
+const canVibrate = () => typeof navigator !== 'undefined' && 'vibrate' in navigator;
+
+let hapticsOn = true;
+try { hapticsOn = localStorage.getItem(HAPTIC_KEY) !== '0'; } catch { /* 読めなければ「振動あり」 */ }
+
+function setHaptics(on) {
+  hapticsOn = Boolean(on);
+  try { localStorage.setItem(HAPTIC_KEY, hapticsOn ? '1' : '0'); } catch { /* 覚えられなくても震える */ }
+  return hapticsOn;
+}
+
 /**
  * 手にも伝える。対応していない端末では黙って無視される。
  * 指が一度も触れていないうちは、ブラウザが断ってくる（起動直後の実績など）ので鳴らさない。
  */
 function buzz(pattern) {
-  if (!gestured) return;
+  if (!gestured || !hapticsOn) return;
   try { navigator.vibrate?.(pattern); } catch { /* 触覚がなくても遊べる */ }
+}
+
+/** 勝負の最中の小刻みな振動は、間隔を空けないとうるさい。 */
+let lastTug = 0;
+function tug(pattern) {
+  const now = performance.now();
+  if (now - lastTug < 550) return;
+  lastTug = now;
+  buzz(pattern);
 }
 
 /** ホーム画面から起動しているか。 */
@@ -1314,7 +1372,11 @@ function setupLogSheet() {
     window.addEventListener('pointerup', end);
   });
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') setOpen(false);
+    if (e.key !== 'Escape') return;
+    // ダイアログが開いているときは、そちらを閉じるだけにする
+    // （引き出しまで一緒に閉じると、開き直す手間が増える）
+    if (document.querySelector('dialog[open]')) return;
+    setOpen(false);
   });
 }
 
@@ -1334,6 +1396,7 @@ function init() {
   checkDaily({ quiet: firstRun });
   renderDaily();
   renderSound();
+  renderSettings();
   renderCoach();
   reportAchievements();
   checkNewSpot();
@@ -1381,13 +1444,37 @@ function init() {
     resetSave();
   });
 
-  $('btn-shop').addEventListener('click', () => openShop());
-  $('btn-book').addEventListener('click', openBook);
+  for (const dlg of document.querySelectorAll('dialog')) {
+    dlg.addEventListener('close', () => sound.play('close'));
+  }
+
+  $('btn-shop').addEventListener('click', () => { sound.play('open'); openShop(); });
+  $('btn-book').addEventListener('click', () => { sound.play('open'); openBook(); });
   $('btn-quest').addEventListener('click', openQuest);
   $('btn-sound').addEventListener('click', () => {
     sound.toggle();
     renderSound();
     if (!sound.muted) sound.play('coin');
+  });
+
+  $('btn-settings').addEventListener('click', openSettings);
+  $('set-sound').addEventListener('change', (e) => {
+    sound.setMuted(!e.target.checked);
+    renderSound();
+    renderSettings();
+    if (!sound.muted) sound.play('coin');
+  });
+  $('set-ambience').addEventListener('change', (e) => {
+    sound.setAmbience(e.target.checked);
+    renderSettings();
+  });
+  $('set-haptics').addEventListener('change', (e) => {
+    setHaptics(e.target.checked);
+    if (hapticsOn) buzz(HAPTICS.catch);
+  });
+  $('set-try').addEventListener('click', () => {
+    sound.play('catch');
+    buzz(HAPTICS.catch);
   });
 
   $('btn-backup').addEventListener('click', openBackup);
@@ -1412,11 +1499,24 @@ function init() {
   });
 
   // スマホのブラウザは、指が触れるまで音を鳴らさせてくれない
-  const wake = () => { gestured = true; sound.unlock(); };
+  const wake = () => {
+    gestured = true;
+    sound.unlock();
+    sound.startAmbience();
+  };
   window.addEventListener('pointerdown', wake, { once: true });
   window.addEventListener('keydown', wake, { once: true });
   $('btn-sell').addEventListener('click', sellResult);
   $('btn-release').addEventListener('click', releaseResult);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      sound.stopAmbience();
+      sound.stopReel();
+    } else if (gestured) {
+      sound.startAmbience();
+    }
+  });
 
   registerServiceWorker();
   setupInstall();
@@ -1425,7 +1525,7 @@ function init() {
   // 画面の向きが変わったら canvas を作り直す
   window.addEventListener('orientationchange', () => setTimeout(() => scene.resize(), 250));
   for (const tab of document.querySelectorAll('.tab')) {
-    tab.addEventListener('click', () => { shopKind = tab.dataset.kind; renderShop(); });
+    tab.addEventListener('click', () => { sound.play('tick'); shopKind = tab.dataset.kind; renderShop(); });
   }
 
   // 通し確認（test/browser.smoke.mjs）から中の状態を覗くための窓口。

@@ -20,6 +20,29 @@ await mkdir(OUT, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined });
 const fail = (msg) => { throw new Error(msg); };
 
+/**
+ * 引き出し（下から出る日誌）の中のボタンを押す。
+ * 中身は position: fixed で縦になぞるので、いったん見える位置まで送ってから、
+ * その座標を直に触る（Playwright の tap は、この入れ子をうまく追えない）。
+ */
+async function tapInSheet(page, selector, label = selector) {
+  const seat = await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect();
+    return {
+      inView: r.top >= 0 && r.bottom <= window.innerHeight,
+      x: Math.round(r.left + r.width / 2),
+      y: Math.round(r.top + r.height / 2),
+    };
+  }, selector);
+  if (!seat) fail(`${label} が見つからない`);
+  if (!seat.inView) fail(`日誌をなぞっても ${label} に届かない`);
+  await page.waitForTimeout(250);
+  await page.touchscreen.tap(seat.x, seat.y);
+}
+
 /** 端末ごとに、指だけで釣り上げられるか見る。 */
 async function playOn(label, deviceName) {
   const ctx = await browser.newContext(devices[deviceName]);
@@ -410,8 +433,35 @@ async function checkQuestScreen() {
   });
   if (!coach.hidden && !coach.through) fail('はじめての案内がタップをさえぎっている');
 
+  // 音と振動の設定も、狭い幅でスイッチが押せること
+  // 設定は日誌の下のほうにあるので、なぞって出せることも一緒に見る
+  await tapInSheet(page, '#btn-settings', '音と振動の設定');
+  await page.waitForTimeout(450);
+  const settings = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.switch-row')];
+    return {
+      rows: rows.length,
+      over: document.documentElement.scrollWidth - window.innerWidth,
+      switches: [...document.querySelectorAll('.switch')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right) };
+      }),
+      note: document.getElementById('haptics-note').textContent,
+    };
+  });
+  if (settings.rows !== 3) fail(`設定の項目が 3 つではない（${settings.rows}）`);
+  if (settings.over > 1) fail(`設定の画面が ${settings.over}px はみ出している`);
+  for (const sw of settings.switches) {
+    if (sw.h < 28 || sw.w < 44) fail(`スイッチが小さすぎる（${sw.w}x${sw.h}px）`);
+    if (sw.right > width) fail(`スイッチが画面からはみ出している（右端 ${sw.right}px）`);
+  }
+  await page.screenshot({ path: `${OUT}mobile-settings.png` });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  console.log(`設定の画面: ${width}px でスイッチ ${settings.switches.length} 個が押せる／振動「${settings.note.slice(0, 20)}…」`);
+
   // バックアップの画面も狭い幅で読めること
-  await page.tap('#btn-backup');
+  await tapInSheet(page, '#btn-backup', 'バックアップ');
   await page.waitForTimeout(450);
   const backup = await page.evaluate(() => {
     const out = document.getElementById('backup-out');

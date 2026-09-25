@@ -15,7 +15,7 @@ import {
   gainXp, progressDaily, rankAt, rankEffects, rankOf, rankProgress, refreshDaily,
   rollDailies, setTitle, shinyKinds, todayKey, totalEffects, xpFor,
   SAVE_FORMAT, SAVE_VERSION, TUTORIAL, advanceTutorial, exportSave, importSave,
-  saveSummary, tutorialStep,
+  saveSummary, tutorialStep, HAPTICS, hapticFor,
 } from '../src/engine.js';
 import { SOUND_NAMES, sound } from '../src/sound.js';
 
@@ -1604,4 +1604,34 @@ test('音は、鳴らせない環境でも落ちない', () => {
   sound.stopReel();
   assert.equal(sound.toggle(), true, '消音に切りかえられない');
   assert.equal(sound.toggle(), false);
+});
+
+// ------------------------------------------------------------------ 手ごたえ（振動）
+
+test('振動のパターンは、指で区別がつく形になっている', () => {
+  for (const [name, pattern] of Object.entries(HAPTICS)) {
+    assert.ok(Array.isArray(pattern) && pattern.length > 0, `${name}: パターンが空`);
+    for (const ms of pattern) {
+      assert.ok(Number.isInteger(ms) && ms > 0 && ms <= 300, `${name}: ${ms}ms は長すぎるか短すぎる`);
+    }
+  }
+  // 珍しいものほど長く震える
+  const total = (p) => p.reduce((a, b) => a + b, 0);
+  assert.ok(total(HAPTICS.boss) > total(HAPTICS.catch), 'ヌシがふつうの魚と同じ手ごたえ');
+  assert.ok(total(HAPTICS.shiny) > total(HAPTICS.catch), 'きらめきがふつうの魚と同じ手ごたえ');
+  assert.ok(total(HAPTICS.junk) < total(HAPTICS.catch), 'ゴミが魚より手ごたえがある');
+});
+
+test('釣れたものに合わせて振動を選ぶ', () => {
+  const of = (id, over = {}) => hapticFor({ fish: fishById(id), sizeRatio: 0.5, ...over });
+  assert.deepEqual(of('nushi'), HAPTICS.boss, 'ヌシの手ごたえが違う');
+  assert.deepEqual(of('funa', { shiny: true }), HAPTICS.shiny);
+  assert.deepEqual(of('boot'), HAPTICS.junk, 'ゴミの手ごたえが違う');
+  assert.deepEqual(of('funa', { isNew: true }), HAPTICS.record);
+  assert.deepEqual(of('funa', { sizeRatio: 0.9 }), HAPTICS.big);
+  assert.deepEqual(of('funa'), HAPTICS.catch);
+  assert.deepEqual(hapticFor(null), HAPTICS.catch, '中身がなくても落ちない');
+
+  // ヌシは、きらめきでも自己ベストでもヌシの手ごたえが勝つ
+  assert.deepEqual(of('nushi', { shiny: true, isNew: true }), HAPTICS.boss);
 });
