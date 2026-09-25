@@ -7,6 +7,9 @@ import {
   normalizePlayer, owns, pickFish, recordCatch, rollEvent, sell, sizeLabel,
   shortMoney, sizeTitle, spotById, tickEvent, timeAt, useCharm, weatherById, yen,
   MAX_POWER, isHardSpot, spotHazard, spotLocked,
+  ACHIEVEMENTS, RANKS, SHINY, achievementState, checkAchievements, dailyProgress,
+  earnedTitles, gainXp, nextRank, progressDaily, rankEffects, rankOf, rankProgress, refreshDaily,
+  setTitle, shinyKinds, todayKey, totalEffects,
 } from './engine.js';
 import { CAST_TIME, LAND_TIME, Scene } from './scene.js';
 
@@ -108,6 +111,15 @@ function renderMoney(animate = true) {
 }
 
 function renderHud() {
+  const rank = rankOf(player);
+  const rankBadge = $('badge-rank');
+  rankBadge.querySelector('.r-lv').textContent = `Lv.${rank.level}`;
+  rankBadge.querySelector('.r-name').textContent = rank.name;
+  rankBadge.title = `熟練度 Lv.${rank.level}「${rank.name}」 ${player.xp.toLocaleString('ja-JP')} 経験値`;
+  const titleBadge = $('badge-title');
+  titleBadge.hidden = !player.title;
+  if (player.title) titleBadge.textContent = `《${player.title}》`;
+
   const spot = spotById(player.spot);
   const time = timeAt(player.timeIndex);
   $('badge-spot').textContent = spot.name;
@@ -193,6 +205,7 @@ function cast() {
   hideResult();
   player.casts += 1;
   player.timeIndex += 1;
+  reportDaily(progressDaily(player, { type: 'cast' }));
 
   // 天気は数投ごとに変わる
   const { weather, changed } = advanceWeather(player, Math.random);
@@ -226,7 +239,7 @@ function cast() {
     const delay = biteDelay(Math.random, {
       lure: equippedLure(player),
       timeIndex: player.timeIndex,
-      gear: gearEffects(player),
+      gear: totalEffects(player),
       weather: weatherById(player.weather),
       event: happening?.event,
       charm: charmState?.charm.effect,
@@ -242,7 +255,7 @@ function startBite() {
     rod: equippedRod(player),
     lure: equippedLure(player),
     timeIndex: player.timeIndex,
-    gear: gearEffects(player),
+    gear: totalEffects(player),
     weather: weatherById(player.weather),
     event: happening?.event,
     charm: charmState?.charm.effect,
@@ -252,7 +265,7 @@ function startBite() {
   buzz(35);
   setAction('合わせる！', { hot: true });
   setStatus('きた！ 合わせろ！', 'alert');
-  timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), hookWindow(gearEffects(player)) * 1000);
+  timer = setTimeout(() => missBite('逃げられた… 合わせが遅かった'), hookWindow(totalEffects(player)) * 1000);
 }
 
 function missBite(text) {
@@ -271,7 +284,7 @@ function hook() {
   const rod = equippedRod(player);
   fight = new Fight({
     fish: pending.fish, rod, sizeRatio: pending.sizeRatio, rng: Math.random,
-    gear: gearEffects(player),
+    gear: totalEffects(player),
     weather: weatherById(player.weather),
     charm: charmState?.charm.effect,
     spot: spotById(player.spot),
@@ -310,9 +323,19 @@ function finishFight(phase) {
   if (phase === FIGHT.caught) {
     scene.land(result);
     buzz([25, 45, 90]);
-    const isNew = recordCatch(player, result);
+    const isNew = recordCatch(player, result, { weather: player.weather });
     result.isNew = isNew;
+    result.xp = gainXp(player, result);
     announceUnlock(result.fish);
+    if (result.shiny) {
+      log(`${SHINY.emoji} ${result.fish.name}が光っている！ きらめき個体だ`, 'legendary');
+      buzz([30, 40, 30, 40, 60]);
+    }
+    if (result.xp.leveledUp) {
+      log(`🎖️ 熟練度が上がった！ Lv.${result.xp.rank.level}「${result.xp.rank.name}」`, 'epic');
+    }
+    reportDaily(progressDaily(player, { type: 'catch', result }));
+    reportAchievements();
     save();
     setStatus('釣り上げた！', 'good');
     setHint('');
@@ -349,6 +372,7 @@ function backToIdle() {
   setAction('キャスト');
   setStatus('竿を振って釣りを始めよう');
   setHint('');
+  checkDaily();   // 日をまたいで遊んでいたら、ここで新しいお題になる
   renderHud();
 }
 
@@ -376,6 +400,16 @@ function showResult(result) {
   const bossLine = $('result-boss');
   bossLine.hidden = !result.fish.boss;
   if (result.fish.boss) bossLine.textContent = `👑 ${result.fish.title} — ${result.fish.tale}`;
+  $('result-shiny').hidden = !result.shiny;
+  const xpLine = $('result-xp');
+  xpLine.hidden = !result.xp;
+  if (result.xp) {
+    xpLine.textContent = result.xp.leveledUp
+      ? `+${result.xp.gained} 経験値 → Lv.${result.xp.rank.level} ${result.xp.rank.name}！`
+      : `+${result.xp.gained} 経験値`;
+    xpLine.dataset.up = result.xp.leveledUp ? 'true' : 'false';
+  }
+  card.dataset.shiny = result.shiny ? 'true' : 'false';
   card.dataset.boss = result.fish.boss ? 'true' : 'false';
   card.dataset.rarity = result.fish.rarity;
   card.hidden = false;
@@ -406,6 +440,8 @@ function sellResult() {
   scene.coins(14);
   buzz(15);
   sell(player, result);
+  reportDaily(progressDaily(player, { type: 'sell', price: result.price }));
+  reportAchievements();
   save();
   log(`${result.fish.name}を ${yen(result.price)} で売った`, 'money');
   hideResult();
@@ -533,6 +569,7 @@ const EFFECT_LABELS = {
   junkCut: ['ゴミ回避', (v) => `+${Math.round(v * 100)}%`],
   line: ['ライン強度', (v) => `+${v.toFixed(1)}`],
   driftCut: ['流れへの踏ん張り', (v) => `+${Math.round(v * 1000)}`],
+  shinyBonus: ['きらめきの出やすさ', (v) => `+${Math.round(v * 100)}%`],
   calm: ['難所の荒れ', () => 'おさまる'],
   reel: ['寄せ速度', (v) => `+${Math.round(v * 100)}`],
   barH: ['バーの広さ', (v) => `+${Math.round(v * 100)}`],
@@ -718,6 +755,188 @@ function shopMsg(text, bad = false) {
   el.classList.add('pulse');
 }
 
+// ---------------------------------------------------------------- やりこみ（熟練度・実績・お題）
+
+/** 実績を拾って、達成したぶんを日誌に出す。 */
+function reportAchievements() {
+  const unlocked = checkAchievements(player);
+  if (!unlocked.length) return unlocked;
+  for (const a of unlocked) {
+    const extra = a.title ? ` と称号「${a.title}」` : '';
+    log(`🏅 実績「${a.name}」達成！ ${yen(a.reward)}${extra}をもらった`, 'legendary');
+  }
+  // はじめての称号は自動でつける（あとから記録の画面でかえられる）
+  if (!player.title) {
+    const first = unlocked.find((a) => a.title);
+    if (first) setTitle(player, first.title);
+  }
+  setStatus(`🏅 実績「${unlocked[0].name}」達成！`, 'good');
+  buzz([30, 50, 30]);
+  scene.coins(12);
+  renderMoney(false);
+  renderHud();
+  return unlocked;
+}
+
+/** 達成したお題を日誌に出す。 */
+function reportDaily(done) {
+  for (const q of done) {
+    log(`📅 お題「${q.label}」達成！ ${yen(q.reward)}をもらった`, 'money');
+  }
+  if (done.length) {
+    buzz(40);
+    renderMoney(false);
+    setStatus(`📅 お題「${done[0].label}」達成！`, 'good');
+  }
+  renderDaily();
+}
+
+/** 日付が変わっていたら、お題を引き直す。 */
+function checkDaily({ quiet = false } = {}) {
+  if (!refreshDaily(player, todayKey())) return false;
+  if (!quiet) log('📅 今日のお題が届いた。日誌の上に出ています', 'epic');
+  renderDaily();
+  save();
+  return true;
+}
+
+/** お題の進み具合の書きかたは、種類によって変える。 */
+function questAmount(q) {
+  if (q.kind === 'sell') return `${shortMoney(q.progress)} / ${shortMoney(q.goal)}円`;
+  if (q.kind === 'size') return `${q.progress} / ${q.goal}cm`;
+  return `${q.progress} / ${q.goal}`;
+}
+
+function renderDaily() {
+  const quests = player.daily?.quests ?? [];
+  const list = $('daily-list');
+  list.replaceChildren();
+  for (const q of quests) {
+    const li = document.createElement('li');
+    li.className = `daily-item${q.done ? ' done' : ''}`;
+
+    const label = document.createElement('span');
+    label.className = 'daily-label';
+    label.textContent = `${q.done ? '✅ ' : ''}${q.label}`;
+
+    const num = document.createElement('span');
+    num.className = 'daily-num';
+    num.textContent = questAmount(q);
+
+    const bar = document.createElement('span');
+    bar.className = 'daily-bar';
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.round(Math.min(1, q.progress / q.goal) * 100)}%`;
+    bar.append(fill);
+
+    const reward = document.createElement('span');
+    reward.className = 'daily-reward';
+    reward.textContent = `賞金 ${yen(q.reward)}`;
+
+    li.append(label, num, bar, reward);
+    list.append(li);
+  }
+  const prog = dailyProgress(player);
+  $('daily-count').textContent = `${prog.done} / ${prog.total}`;
+  $('daily-panel').classList.toggle('all-done', prog.total > 0 && prog.done === prog.total);
+}
+
+function openQuest() {
+  // 開いた時点で届いているものは、ここでも拾っておく
+  reportAchievements();
+  renderQuest();
+  $('dlg-quest').showModal();
+}
+
+function renderQuest() {
+  const rank = rankOf(player);
+  const next = nextRank(player.xp);
+  $('rank-level').textContent = `Lv.${rank.level}`;
+  $('rank-name').textContent = rank.name;
+  $('rank-next').textContent = next
+    ? `次の「${next.name}」まで あと ${(next.need - player.xp).toLocaleString('ja-JP')}`
+    : `最高位 — 経験値 ${player.xp.toLocaleString('ja-JP')}`;
+  $('rank-fill').style.width = `${Math.round(rankProgress(player.xp) * 100)}%`;
+  const eff = effectRows(rankEffects(player));
+  $('rank-effect').textContent = eff.length
+    ? `いまの効果： ${eff.map(([k, v]) => `${k} ${v}`).join('　')}`
+    : '釣るほど、売値やアタリの速さが少しずつ良くなります';
+
+  renderTitles();
+  renderAchievements();
+
+  const done = player.achieved.length;
+  $('quest-progress').textContent = `実績 ${done} / ${ACHIEVEMENTS.length}`;
+}
+
+function renderTitles() {
+  const titles = earnedTitles(player);
+  const box = $('title-list');
+  box.replaceChildren();
+  $('title-empty').hidden = titles.length > 0;
+  $('title-count').textContent = `${titles.length} / ${ACHIEVEMENTS.filter((a) => a.title).length}`;
+  for (const title of titles) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const on = player.title === title;
+    btn.className = `title-chip${on ? ' on' : ''}`;
+    btn.textContent = on ? `《${title}》` : title;
+    btn.addEventListener('click', () => {
+      setTitle(player, on ? null : title);
+      save();
+      renderHud();
+      renderTitles();
+    });
+    box.append(btn);
+  }
+}
+
+function renderAchievements() {
+  const rows = ACHIEVEMENTS.map((a) => ({ a, state: achievementState(player, a) }));
+  // まだのものを、達成に近い順に上へ
+  rows.sort((x, y) => (Number(x.state.done) - Number(y.state.done)) || (y.state.ratio - x.state.ratio));
+
+  const list = $('ach-list');
+  list.replaceChildren();
+  for (const { a, state } of rows) {
+    const card = document.createElement('article');
+    card.className = `ach-item${state.done ? ' done' : ''}`;
+
+    const head = document.createElement('div');
+    head.className = 'ach-head';
+    head.innerHTML = `<span class="ach-icon">${a.icon}</span><strong>${a.name}</strong>`;
+    const reward = document.createElement('span');
+    reward.className = 'ach-reward';
+    reward.textContent = state.done ? '達成' : yen(a.reward);
+    head.append(reward);
+
+    const note = document.createElement('p');
+    note.className = 'ach-note';
+    note.textContent = a.note;
+
+    const bar = document.createElement('div');
+    bar.className = 'ach-bar';
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.round(state.ratio * 100)}%`;
+    bar.append(fill);
+
+    const num = document.createElement('span');
+    num.className = 'ach-num';
+    const shown = Math.min(state.value, a.goal);
+    num.textContent = `${shown.toLocaleString('ja-JP')} / ${a.goal.toLocaleString('ja-JP')}`;
+
+    card.append(head, note, bar, num);
+    if (a.title) {
+      const chip = document.createElement('span');
+      chip.className = 'ach-title';
+      chip.textContent = `称号「${a.title}」`;
+      card.append(chip);
+    }
+    list.append(card);
+  }
+  $('ach-count').textContent = `${player.achieved.length} / ${ACHIEVEMENTS.length}`;
+}
+
 // ---------------------------------------------------------------- 図鑑
 
 function openBook() {
@@ -734,16 +953,18 @@ function openBook() {
     grid.className = 'book-grid';
     for (const f of list) {
       const rec = player.records[f.id];
+      const shiny = player.shinies?.[f.id];
       const cell = document.createElement('div');
-      cell.className = `book-cell${rec ? '' : ' unknown'}`;
+      cell.className = `book-cell${rec ? '' : ' unknown'}${shiny ? ' shiny' : ''}`;
       cell.style.setProperty('--rarity', RARITY[f.rarity].color);
       if (f.boss) cell.classList.add('boss');
       cell.innerHTML = rec
         ? `<span class="book-emoji">${f.emoji}</span>
-           <strong>${f.boss ? '👑 ' : ''}${f.name}</strong>
+           <strong>${shiny ? `${SHINY.emoji} ` : ''}${f.boss ? '👑 ' : ''}${f.name}</strong>
            ${f.boss ? `<small class="book-title">${f.title}</small>` : ''}
            <small>最大 ${rec.lengthCm}cm / ${rec.weightKg}kg</small>
-           <small>${rec.count}匹 ・ 最高 ${yen(rec.price)}</small>`
+           <small>${rec.count}匹 ・ 最高 ${yen(rec.price)}</small>
+           ${shiny ? `<small class="book-shiny">${SHINY.emoji} きらめき ${shiny.count}匹</small>` : ''}`
         : `<span class="book-emoji">${f.boss ? '👑' : '❔'}</span>
            <strong>${f.boss ? 'ヌシ' : '？？？'}</strong>
            <small>${RARITY[f.rarity].label}</small>`;
@@ -752,7 +973,10 @@ function openBook() {
     section.append(grid);
     book.append(section);
   }
-  $('book-progress').textContent = `${found} / ${FISH.length} 種`;
+  const shinies = shinyKinds(player);
+  $('book-progress').textContent = shinies
+    ? `${found} / ${FISH.length} 種 ・ ${SHINY.emoji} ${shinies} 種`
+    : `${found} / ${FISH.length} 種`;
   $('dlg-book').showModal();
 }
 
@@ -783,9 +1007,14 @@ function frame(now) {
 function resetSummary() {
   const caught = Object.keys(player.records).length;
   const charms = Object.values(player.charms ?? {}).reduce((a, b) => a + b, 0);
+  const rank = rankOf(player);
+  const shinies = shinyKinds(player);
   return [
     `所持金 ${yen(player.money)}`,
     `図鑑 ${caught} 種（${player.catches} 匹）`,
+    ...(shinies ? [`${SHINY.emoji} きらめき ${shinies} 種`] : []),
+    `熟練度 Lv.${rank.level}「${rank.name}」`,
+    `実績 ${player.achieved.length} / ${ACHIEVEMENTS.length}`,
     `竿 ${player.rods.length} 本 ・ ルアー ${player.lures.length} 個 ・ 道具 ${player.gears.length} 個`,
     `行ける釣り場 ${player.spots.length} か所`,
     ...(charms ? [`お札 ${charms} 枚`] : []),
@@ -959,6 +1188,11 @@ function init() {
 
   renderMoney(false);
   renderHud();
+  // はじめて遊ぶときは、お題が届いた案内は出さない（日誌がうるさくなるので）
+  const firstRun = player.casts === 0 && !player.daily?.date;
+  checkDaily({ quiet: firstRun });
+  renderDaily();
+  reportAchievements();
   checkNewSpot();
   setAction('キャスト');
   log('今日はいい天気だ。釣りに行こう。');
@@ -988,6 +1222,8 @@ function init() {
       openShop();
     } else if (e.key === 'z' || e.key === 'Z') {
       openBook();
+    } else if (e.key === 'a' || e.key === 'A') {
+      openQuest();
     }
   });
   window.addEventListener('keyup', (e) => {
@@ -1004,6 +1240,7 @@ function init() {
 
   $('btn-shop').addEventListener('click', () => openShop());
   $('btn-book').addEventListener('click', openBook);
+  $('btn-quest').addEventListener('click', openQuest);
   $('btn-sell').addEventListener('click', sellResult);
   $('btn-release').addEventListener('click', releaseResult);
 
@@ -1027,7 +1264,7 @@ function init() {
     scene,
     save,
     reset: resetSave,
-    render() { renderMoney(false); renderHud(); },
+    render() { renderMoney(false); renderHud(); renderDaily(); },
   };
 
   lastFrame = performance.now();

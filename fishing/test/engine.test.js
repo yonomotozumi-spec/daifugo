@@ -10,6 +10,10 @@ import {
   EVENTS, WEATHERS, WEATHER_SPAN, advanceWeather, rollEvent, tickEvent, weatherById,
   CHARMS, buyCharm, charmById, charmCount, shortMoney, useCharm,
   MAX_POWER, isHardSpot, spotById, spotHazard, spotLocked,
+  ACHIEVEMENTS, DAILY_COUNT, DAILY_KINDS, MAX_RANK, RANKS, SHINY,
+  achievementById, achievementState, checkAchievements, dailyProgress, earnedTitles,
+  gainXp, progressDaily, rankAt, rankEffects, rankOf, rankProgress, refreshDaily,
+  rollDailies, setTitle, shinyKinds, todayKey, totalEffects, xpFor,
 } from '../src/engine.js';
 
 const lure = (id) => LURES.find((l) => l.id === id);
@@ -1116,4 +1120,331 @@ test('新しい竿・ルアー・道具・お札がそろっている', () => {
   // 難所の魚に届く竿が必ず存在する
   const strongest = Math.max(...FISH.map((f) => f.power));
   assert.ok(MAX_POWER >= strongest, `いちばん強い魚（${strongest}）に届く竿がない`);
+});
+
+// ------------------------------------------------------------------ きらめき個体
+
+/** 抽選を何度も回して、きらめきが出た割合を返す。 */
+function shinyRate(opts = {}, tries = 20000) {
+  const rng = mulberry32(2024);
+  let shiny = 0;
+  for (let i = 0; i < tries; i++) {
+    const r = pickFish('pond', { rng, rod: rod('nobe'), lure: lure('worm'), ...opts });
+    if (r.shiny) shiny++;
+  }
+  return shiny / tries;
+}
+
+test('きらめき個体はまれに出て、値段が跳ね上がる', () => {
+  const rate = shinyRate();
+  assert.ok(rate > SHINY.rate * 0.6 && rate < SHINY.rate * 1.5,
+    `出る割合がおかしい（${(rate * 100).toFixed(2)}% / 想定 ${(SHINY.rate * 100).toFixed(2)}%）`);
+
+  // 同じ魚・同じ大きさなら、ちょうど 5 倍
+  const fish = fishById('funa');
+  const plain = priceOf(fish, 1);
+  assert.equal(plain * SHINY.priceMult, plain * 5);
+});
+
+test('ゴミは光らない', () => {
+  const rng = mulberry32(5);
+  for (let i = 0; i < 4000; i++) {
+    const r = pickFish('pond', { rng, rod: rod('nobe'), lure: lure('worm') });
+    if (r.fish.junk) assert.equal(r.shiny, false, `${r.fish.name}が光った`);
+  }
+});
+
+test('ランクが上がるときらめきに出会いやすくなる', () => {
+  const low = shinyRate({ gear: NO_GEAR });
+  const high = shinyRate({ gear: rankEffects({ xp: RANKS[MAX_RANK - 1].need }) });
+  assert.ok(high > low * 1.2, `熟練度で増えていない（${low} → ${high}）`);
+});
+
+// ------------------------------------------------------------------ 熟練度（ランク）
+
+test('ランクの表は順番に上がっていく', () => {
+  assert.equal(RANKS.length, MAX_RANK);
+  for (let i = 1; i < RANKS.length; i++) {
+    assert.equal(RANKS[i].level, RANKS[i - 1].level + 1);
+    assert.ok(RANKS[i].need > RANKS[i - 1].need, `${RANKS[i].name}の必要経験値が前より少ない`);
+    assert.ok(RANKS[i].name, 'ランクに名前がない');
+  }
+  assert.equal(RANKS[0].need, 0);
+});
+
+test('経験値はレア度・大きさ・ヌシ・きらめきで増える', () => {
+  const at = (id, over = {}) => xpFor({ fish: fishById(id), sizeRatio: 0.5, ...over });
+  assert.equal(at('boot'), 1, 'ゴミで経験値が入る');
+  assert.ok(at('funa') < at('bass'), 'レア度で増えていない');
+  assert.ok(at('bass') < at('namazu'));
+  assert.ok(at('namazu') < at('suppon'));
+  assert.ok(at('suppon') < at('nushi'), 'ヌシがいちばん多くない');
+  assert.ok(at('funa', { sizeRatio: 1 }) > at('funa', { sizeRatio: 0 }), '大きさで増えていない');
+  assert.equal(at('funa', { shiny: true }), at('funa') * SHINY.xpMult);
+});
+
+test('ランクは経験値で決まり、次のランクまでの進みも出る', () => {
+  assert.equal(rankAt(0).level, 1);
+  assert.equal(rankAt(-50).level, 1, 'おかしな値でも落ちない');
+  assert.equal(rankAt(RANKS[1].need).level, 2);
+  assert.equal(rankAt(RANKS[1].need - 1).level, 1);
+  assert.equal(rankAt(99999999).level, MAX_RANK);
+  assert.equal(rankProgress(RANKS[1].need), 0);
+  assert.ok(Math.abs(rankProgress((RANKS[1].need + RANKS[2].need) / 2) - 0.5) < 0.01);
+  assert.equal(rankProgress(99999999), 1, '最高位なら満タン');
+});
+
+test('釣るとランクが上がり、上がった合図が出る', () => {
+  const p = createPlayer();
+  assert.equal(rankOf(p).level, 1);
+  let leveled = 0;
+  for (let i = 0; i < 40; i++) {
+    const res = gainXp(p, { fish: fishById('koi'), sizeRatio: 0.8 });
+    if (res.leveledUp) leveled++;
+    assert.ok(res.gained > 0);
+  }
+  assert.ok(rankOf(p).level > 1, 'ランクが上がらない');
+  assert.equal(leveled, rankOf(p).level - 1, '上がった回数と合わない');
+});
+
+test('ランクの効果は道具と同じ枠に足される', () => {
+  const low = createPlayer();
+  const high = createPlayer({ xp: RANKS[MAX_RANK - 1].need, gears: ['cooler'] });
+  assert.deepEqual(rankEffects(low), NO_GEAR, 'ランク 1 なのに補正がある');
+  const total = totalEffects(high);
+  const rank = rankEffects(high);
+  assert.ok(rank.sell > 0 && rank.line > 0, '最高ランクなのに効果がない');
+  assert.equal(total.sell, rank.sell + gearEffects(high).sell, '道具とランクが足されていない');
+  for (const key of Object.keys(NO_GEAR)) {
+    assert.ok(Number.isFinite(total[key]), `${key} が数値になっていない`);
+  }
+});
+
+// ------------------------------------------------------------------ 実績と称号
+
+test('実績のデータが壊れていない', () => {
+  const ids = ACHIEVEMENTS.map((a) => a.id);
+  assert.equal(new Set(ids).size, ids.length, '実績の ID が重複している');
+  assert.ok(ACHIEVEMENTS.length >= 30, `実績が少ない（${ACHIEVEMENTS.length} 個）`);
+  const fresh = createPlayer();
+  for (const a of ACHIEVEMENTS) {
+    assert.ok(a.name && a.note && a.icon, `${a.id}: 表示用の値が欠けている`);
+    assert.ok(a.goal > 0, `${a.name}: 目標がおかしい`);
+    assert.ok(a.reward > 0, `${a.name}: 賞金がない`);
+    // はじめの一匹以外は、まっさらな状態で達成していないこと
+    const state = achievementState(fresh, a);
+    assert.ok(Number.isFinite(state.value), `${a.name}: 進みが数値でない`);
+    assert.ok(state.value < a.goal, `${a.name}: 何もしていないのに達成している`);
+    assert.equal(achievementById(a.id), a);
+  }
+});
+
+test('実績を達成すると賞金がもらえ、二度はもらえない', () => {
+  const p = createPlayer();
+  recordCatch(p, { fish: fishById('funa'), weightKg: 1, lengthCm: 30, price: 100 });
+  const first = checkAchievements(p);
+  assert.ok(first.some((a) => a.id === 'first'), 'はじめの一匹が達成されない');
+  const money = p.money;
+  assert.ok(money > 0, '賞金が入っていない');
+  assert.deepEqual(checkAchievements(p), [], '同じ実績を二度達成している');
+  assert.equal(p.money, money, '二度目で賞金が増えた');
+});
+
+test('賞金でさらに開く実績も、その場で拾える', () => {
+  const p = createPlayer({ earned: 9900 });
+  // 売上 1 万円 → 賞金 → それ以上の実績までまとめて開くこと
+  p.earned += 200;
+  const unlocked = checkAchievements(p);
+  assert.ok(unlocked.some((a) => a.id === 'earn10k'), '売上の実績が開かない');
+  assert.equal(p.money, unlocked.reduce((sum, a) => sum + a.reward, 0), '賞金の合計が合わない');
+});
+
+test('称号は実績でしか手に入らず、持っているものだけつけられる', () => {
+  const p = createPlayer();
+  assert.deepEqual(earnedTitles(p), []);
+  assert.equal(setTitle(p, 'ヌシ狩り'), false, '持っていない称号がつけられる');
+  assert.equal(p.title, null);
+
+  p.achieved = ['bossAll'];
+  assert.deepEqual(earnedTitles(p), ['ヌシ狩り']);
+  assert.equal(setTitle(p, 'ヌシ狩り'), true);
+  assert.equal(p.title, 'ヌシ狩り');
+  assert.equal(setTitle(p, null), true, '称号を外せない');
+  assert.equal(p.title, null);
+});
+
+test('称号つきの実績がひと通りある', () => {
+  const titled = ACHIEVEMENTS.filter((a) => a.title);
+  assert.ok(titled.length >= 8, `称号が少ない（${titled.length} 個）`);
+  const names = titled.map((a) => a.title);
+  assert.equal(new Set(names).size, names.length, '同じ称号が二つある');
+});
+
+// ------------------------------------------------------------------ 日替わりのお題
+
+test('お題は 3 つ出て、その日のあいだは変わらない', () => {
+  const p = createPlayer();
+  assert.equal(refreshDaily(p, '2026-05-05'), true, '初回に引かれない');
+  const first = JSON.stringify(p.daily.quests);
+  assert.equal(p.daily.quests.length, DAILY_COUNT);
+  assert.equal(refreshDaily(p, '2026-05-05'), false, '同じ日に引き直している');
+  assert.equal(JSON.stringify(p.daily.quests), first);
+  assert.equal(refreshDaily(p, '2026-05-06'), true, '日付が変わっても引き直さない');
+  assert.notEqual(JSON.stringify(p.daily.quests), first, '次の日も同じお題');
+});
+
+test('お題は種類がかぶらず、行ける釣り場からしか出ない', () => {
+  for (const spots of [['pond'], ['pond', 'river', 'harbor'], SPOTS.map((s) => s.id)]) {
+    const p = createPlayer({ spots });
+    for (const day of ['2026-01-01', '2026-06-15', '2026-12-31']) {
+      const quests = rollDailies(day, p);
+      assert.equal(quests.length, DAILY_COUNT, `${day}: お題が ${quests.length} 個`);
+      const kinds = quests.map((q) => q.kind);
+      assert.equal(new Set(kinds).size, kinds.length, `${day}: 同じ種類のお題が並んでいる`);
+      for (const q of quests) {
+        assert.ok(q.goal > 0 && q.reward > 0, `${q.label}: 目標か賞金がおかしい`);
+        assert.ok(q.label, 'お題の文がない');
+        assert.equal(q.done, false);
+        if (q.spot) assert.ok(spots.includes(q.spot), `行けない釣り場のお題が出た: ${q.label}`);
+      }
+    }
+  }
+});
+
+test('はじめたばかりだと、ヌシやきらめきのお題は出ない', () => {
+  const p = createPlayer();
+  for (let d = 1; d <= 28; d++) {
+    const quests = rollDailies(`2026-03-${String(d).padStart(2, '0')}`, p);
+    for (const q of quests) {
+      assert.ok(!['boss', 'shiny'].includes(q.kind), `池しか行けないのに「${q.label}」が出た`);
+    }
+  }
+});
+
+test('お題は進めると賞金がもらえ、一度だけ数えられる', () => {
+  const p = createPlayer();
+  p.daily = {
+    date: 'x',
+    quests: [
+      { kind: 'count', spot: 'pond', label: '池で 2 匹', goal: 2, progress: 0, done: false, reward: 500 },
+      { kind: 'sell', label: '1000 円売る', goal: 1000, progress: 0, done: false, reward: 800 },
+      { kind: 'size', label: '30cm 以上', goal: 30, progress: 0, done: false, reward: 400 },
+    ],
+  };
+  const catchOne = (over = {}) => progressDaily(p, {
+    type: 'catch',
+    result: { fish: fishById('funa'), lengthCm: 20, ...over },
+  });
+
+  assert.deepEqual(catchOne(), [], '1 匹目で達成になっている');
+  const done = catchOne({ lengthCm: 40 });
+  assert.equal(done.length, 2, `2 匹目で達成するのは 2 つのはず（${done.length}）`);
+  assert.equal(p.money, 900, `賞金が合わない（${p.money}）`);
+  assert.equal(p.dailyDone, 2);
+
+  // 達成したお題はもう増えない
+  catchOne({ lengthCm: 90 });
+  assert.equal(p.money, 900);
+  assert.equal(dailyProgress(p).done, 2);
+
+  progressDaily(p, { type: 'sell', price: 1200 });
+  assert.equal(p.money, 900 + 800);
+  assert.deepEqual(dailyProgress(p), { done: 3, total: 3 });
+});
+
+test('お題の種類ごとに、数えかたが合っている', () => {
+  const quest = (over) => {
+    const p = createPlayer();
+    p.daily = { date: 'x', quests: [{ progress: 0, done: false, reward: 100, goal: 99, ...over }] };
+    return p;
+  };
+  const feed = (p, event) => { progressDaily(p, event); return p.daily.quests[0].progress; };
+
+  const casts = quest({ kind: 'casts', label: '' });
+  assert.equal(feed(casts, { type: 'cast' }), 1);
+
+  const junk = quest({ kind: 'junk', label: '' });
+  assert.equal(feed(junk, { type: 'catch', result: { fish: fishById('boot') } }), 1);
+  assert.equal(feed(junk, { type: 'catch', result: { fish: fishById('funa') } }), 1, 'ゴミ以外を数えている');
+
+  const rare = quest({ kind: 'rarity', rarity: 'rare', label: '' });
+  assert.equal(feed(rare, { type: 'catch', result: { fish: fishById('bass') } }), 0, 'レア度が足りないのに数えた');
+  assert.equal(feed(rare, { type: 'catch', result: { fish: fishById('namazu') } }), 1);
+  assert.equal(feed(rare, { type: 'catch', result: { fish: fishById('suppon') } }), 2, '上のレア度が数えられない');
+
+  const boss = quest({ kind: 'boss', label: '' });
+  assert.equal(feed(boss, { type: 'catch', result: { fish: fishById('funa') } }), 0);
+  assert.equal(feed(boss, { type: 'catch', result: { fish: fishById('nushi') } }), 1);
+
+  const shiny = quest({ kind: 'shiny', label: '' });
+  assert.equal(feed(shiny, { type: 'catch', result: { fish: fishById('funa') } }), 0);
+  assert.equal(feed(shiny, { type: 'catch', result: { fish: fishById('funa'), shiny: true } }), 1);
+});
+
+test('その日の鍵は年月日でできている', () => {
+  assert.equal(todayKey(new Date(2026, 0, 3)), '2026-01-03');
+  assert.equal(todayKey(new Date(2026, 11, 31)), '2026-12-31');
+  assert.match(todayKey(), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+// ------------------------------------------------------------------ 記録とセーブ
+
+test('きらめき個体は別の図鑑にも残る', () => {
+  const p = createPlayer();
+  const result = { fish: fishById('koi'), weightKg: 3, lengthCm: 60, price: 5000, shiny: true };
+  recordCatch(p, result, { weather: 'rain' });
+  assert.equal(shinyKinds(p), 1);
+  assert.equal(p.records.koi.count, 1, 'ふつうの図鑑にも残っていない');
+  assert.equal(p.shinies.koi.count, 1);
+  assert.deepEqual(p.weathersSeen, ['rain']);
+  assert.equal(p.best.price, 5000);
+  assert.equal(p.best.lengthCm, 60);
+
+  // 光っていない個体では、きらめきの枠は増えない
+  recordCatch(p, { fish: fishById('koi'), weightKg: 9, lengthCm: 90, price: 900 }, { weather: 'rain' });
+  assert.equal(p.shinies.koi.count, 1);
+  assert.equal(p.records.koi.count, 2);
+  assert.equal(p.best.lengthCm, 90, '自己ベストが伸びていない');
+  assert.equal(p.best.price, 5000, '自己ベストの値段が下がった');
+  assert.deepEqual(p.weathersSeen, ['rain'], '同じ天気を二度数えている');
+});
+
+test('壊れたセーブでも、やりこみの記録を拾い直せる', () => {
+  const p = normalizePlayer({
+    xp: -5,
+    achieved: ['first', 'そんな実績はない'],
+    title: 'ヌシ狩り',                       // 実績を持っていないので外れるはず
+    shinies: { koi: { count: 2, weightKg: 3, lengthCm: 60, price: 100 }, nope: { count: 1 } },
+    weathersSeen: ['rain', 'ゆき'],
+    dailyDone: 3.7,
+    best: { price: '1200', lengthCm: 44.6, weightKg: 'x' },
+    daily: { date: '2026-02-02', quests: [{ kind: 'count', spot: 'pond', goal: 3, progress: 1, reward: 500, label: '池で 3 匹' }, { kind: 'にせもの', goal: 1 }] },
+  });
+  assert.equal(p.xp, 0);
+  assert.deepEqual(p.achieved, ['first']);
+  assert.equal(p.title, null, '持っていない称号がついたまま');
+  assert.equal(shinyKinds(p), 1, '知らない魚のきらめきが残っている');
+  assert.deepEqual(p.weathersSeen, ['rain']);
+  assert.equal(p.dailyDone, 3);
+  assert.deepEqual(p.best, { price: 1200, lengthCm: 45, weightKg: 0 });
+  assert.equal(p.daily.quests.length, 1, '知らない種類のお題が残っている');
+  assert.equal(p.daily.quests[0].done, false);
+  assert.equal(p.daily.date, '2026-02-02');
+});
+
+test('大きさのお題は、ヌシに頼らなくても届く', () => {
+  for (const spots of [['pond'], ['pond', 'river'], SPOTS.map((s) => s.id)]) {
+    const p = createPlayer({ spots });
+    // その人が行ける釣り場の、ヌシ以外でいちばん大きい魚
+    const reach = Math.max(...spots
+      .flatMap((id) => fishOfSpot(id))
+      .filter((f) => !f.junk && !f.boss)
+      .map((f) => f.length[1]));
+    for (let d = 1; d <= 28; d++) {
+      for (const q of rollDailies(`2026-07-${String(d).padStart(2, '0')}`, p)) {
+        if (q.kind !== 'size') continue;
+        assert.ok(q.goal <= reach, `${spots.at(-1)}: ${q.label} はヌシでないと無理（届くのは ${reach}cm）`);
+      }
+    }
+  }
 });
