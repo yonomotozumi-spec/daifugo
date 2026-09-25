@@ -13,7 +13,8 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 // 値段や名前はゲーム側から読む（バランス調整のたびに直さなくて済むように）
-import { ACHIEVEMENTS, FISH, GEAR, RODS, SPOTS, WEATHERS, rankAt } from '../src/engine.js';
+import { ACHIEVEMENTS, FISH, GEAR, HAPTICS, RODS, SPOTS, WEATHERS, hapticFor, rankAt } from '../src/engine.js';
+import { SOUND_NAMES } from '../src/sound.js';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8123/fishing/';
 const OUT = new URL('./screenshots/', import.meta.url).pathname;
@@ -34,6 +35,16 @@ await page.goto(BASE, { waitUntil: 'networkidle' });
 await page.waitForFunction(() => window.fishing);
 await page.waitForTimeout(600);
 await shot('01-idle');
+
+// ---------------------------------------------------------------- はじめての案内
+
+const coach = await page.evaluate(() => ({
+  shown: !document.getElementById('coach').hidden,
+  text: document.getElementById('coach-text').textContent,
+}));
+if (!coach.shown) throw new Error('はじめての案内が出ていない');
+if (!coach.text.includes('キャスト')) throw new Error(`案内の中身がちがう: ${coach.text}`);
+console.log(`案内: 「${coach.text}」`);
 
 // ---------------------------------------------------------------- 3 匹釣る
 
@@ -379,6 +390,193 @@ if (!book.progress.includes('✨')) throw new Error(`図鑑の見出しにきら
 console.log(`図鑑: ${book.progress}`);
 await page.keyboard.press('Escape');
 await page.waitForTimeout(300);
+
+// ---------------------------------------------------------------- バックアップ
+
+await page.evaluate(() => { window.fishing.player.money = 777000; window.fishing.save(); });
+await page.click('#btn-backup');
+await page.waitForTimeout(400);
+const backup = await page.evaluate(() => ({
+  text: document.getElementById('backup-out').value,
+  summary: document.getElementById('backup-summary').textContent,
+}));
+if (!backup.text.includes('fishing-save')) throw new Error(`書き出しの形がちがう: ${backup.text.slice(0, 60)}`);
+if (!backup.summary.includes('777,000円')) throw new Error(`見出しに所持金が出ていない: ${backup.summary}`);
+await shot('13-backup');
+
+// 記録を変えてから読み込むと、書き出した時点まで戻る
+await page.evaluate(() => {
+  window.fishing.player.money = 1;
+  window.fishing.player.records = {};
+  window.fishing.save();
+});
+await page.evaluate((text) => {
+  document.getElementById('backup-in').value = text;
+}, backup.text);
+await page.click('#backup-load');
+await page.waitForTimeout(600);
+const restored = await page.evaluate(() => ({
+  money: window.fishing.player.money,
+  records: Object.keys(window.fishing.player.records).length,
+  saved: JSON.parse(localStorage.getItem('fishing:save')).money,
+  msg: document.getElementById('backup-msg').textContent,
+}));
+if (restored.money !== 777000) throw new Error(`読み込んでも戻らない: ${restored.money}`);
+if (restored.records < 1) throw new Error('図鑑が戻っていない');
+if (restored.saved !== 777000) throw new Error('読み込んだ内容が保存されていない');
+console.log(`バックアップ: 書き出して読み直すと所持金と図鑑が戻った（${restored.msg.slice(0, 40)}）`);
+
+// おかしなデータは断る
+await page.evaluate(() => { document.getElementById('backup-in').value = 'こわれたデータ'; });
+await page.click('#backup-load');
+await page.waitForTimeout(300);
+const refused = await page.evaluate(() => ({
+  msg: document.getElementById('backup-msg').textContent,
+  bad: document.getElementById('backup-msg').className.includes('bad'),
+  money: window.fishing.player.money,
+}));
+if (!refused.bad) throw new Error(`こわれたデータを読んでしまった: ${refused.msg}`);
+if (refused.money !== 777000) throw new Error('断ったのに記録が変わった');
+console.log(`バックアップ: こわれたデータは「${refused.msg}」と断った`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+
+// ---------------------------------------------------------------- 音
+
+const soundState = await page.evaluate(() => ({
+  muted: window.fishing.sound.muted,
+  icon: document.getElementById('sound-icon').textContent,
+}));
+if (soundState.muted) throw new Error('はじめから消音になっている');
+if (soundState.icon !== '🔊') throw new Error(`音の印がちがう: ${soundState.icon}`);
+
+await page.click('#btn-sound');
+await page.waitForTimeout(250);
+const muted = await page.evaluate(() => ({
+  muted: window.fishing.sound.muted,
+  icon: document.getElementById('sound-icon').textContent,
+  saved: localStorage.getItem('fishing:muted'),
+}));
+if (!muted.muted || muted.icon !== '🔇') throw new Error(`消音に切りかわらない: ${JSON.stringify(muted)}`);
+if (muted.saved !== '1') throw new Error('消音が保存されていない');
+
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForFunction(() => window.fishing);
+const afterReload = await page.evaluate(() => document.getElementById('sound-icon').textContent);
+if (afterReload !== '🔇') throw new Error('リロードで消音が元に戻った');
+await page.click('#btn-sound');
+await page.waitForTimeout(250);
+console.log('音: 切りかえと保存ができ、リロードしても覚えている');
+
+// ---------------------------------------------------------------- 音と振動の設定
+
+await page.click('#btn-settings');
+await page.waitForTimeout(400);
+const settings = await page.evaluate(() => ({
+  sound: document.getElementById('set-sound').checked,
+  ambience: document.getElementById('set-ambience').checked,
+  haptics: document.getElementById('set-haptics').checked,
+  hapticsOff: document.getElementById('set-haptics').disabled,
+  note: document.getElementById('haptics-note').textContent,
+  canVibrate: 'vibrate' in navigator,
+}));
+if (!settings.sound) throw new Error('効果音の切りかえが合っていない');
+if (!settings.ambience) throw new Error('環境音がはじめから切れている');
+if (settings.canVibrate === settings.hapticsOff) throw new Error(`振動の切りかえが端末と合っていない: ${settings.note}`);
+await shot('14-settings');
+
+// 環境音だけ切っても、効果音は残る
+await page.click('#set-ambience');
+await page.waitForTimeout(300);
+const ambience = await page.evaluate(() => ({
+  on: window.fishing.sound.ambienceOn,
+  saved: localStorage.getItem('fishing:ambience'),
+  sound: !window.fishing.sound.muted,
+}));
+if (ambience.on || ambience.saved !== '0') throw new Error('環境音を切っても保存されない');
+if (!ambience.sound) throw new Error('環境音を切ると効果音まで消える');
+await page.click('#set-ambience');
+await page.waitForTimeout(200);
+console.log(`設定: 効果音 ${SOUND_NAMES.length} 種／環境音の切りかえ／振動「${settings.note}」`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+
+// ---------------------------------------------------------------- 釣れたときの振動
+
+// navigator.vibrate を差し替えて、実際に呼ばれるパターンを見る
+await page.evaluate(() => {
+  window.__vibes = [];
+  Object.defineProperty(navigator, 'vibrate', {
+    configurable: true,
+    value: (pattern) => { window.__vibes.push(pattern); return true; },
+  });
+});
+await page.evaluate(() => { window.fishing.player.spot = 'pond'; window.fishing.render(); });
+
+let vibed = null;
+for (let step = 0; step < 900 && !vibed; step++) {
+  const m = await mode();
+  if (m === 'idle' || m === 'bite') {
+    await page.click('#btn-action');
+  } else if (m === 'fight') {
+    const hold = await page.evaluate(() => {
+      const f = window.fishing.fight;
+      return f ? f.barY > f.fishY : false;
+    });
+    await page.keyboard[hold ? 'down' : 'up']('Space');
+  } else if (m === 'result') {
+    await page.keyboard.up('Space');
+    vibed = await page.evaluate(() => {
+      const card = document.getElementById('result-card');
+      const r = card.pendingResult;
+      return {
+        vibes: window.__vibes,
+        fish: r.fish.id,
+        junk: Boolean(r.fish.junk),
+        boss: Boolean(r.fish.boss),
+        shiny: Boolean(r.shiny),
+        isNew: Boolean(r.isNew),
+        sizeRatio: r.sizeRatio,
+      };
+    });
+  }
+  await page.waitForTimeout(110);
+}
+await page.keyboard.up('Space');
+if (!vibed) throw new Error('振動の確認で 1 匹も釣れなかった');
+
+const wantedBuzz = hapticFor({
+  fish: FISH.find((f) => f.id === vibed.fish),
+  shiny: vibed.shiny,
+  isNew: vibed.isNew,
+  sizeRatio: vibed.sizeRatio,
+});
+const shown = vibed.vibes.map((v) => JSON.stringify(v));
+if (!shown.includes(JSON.stringify(HAPTICS.bite))) throw new Error(`アタリで震えていない: ${shown.join(' ')}`);
+if (!shown.includes(JSON.stringify(wantedBuzz))) {
+  throw new Error(`釣れたときの震えかたが違う（欲しい ${JSON.stringify(wantedBuzz)} / 実際 ${shown.join(' ')}）`);
+}
+console.log(`振動: ${vibed.fish} を釣って ${JSON.stringify(wantedBuzz)} で震えた（${vibed.vibes.length} 回）`);
+
+// 設定で切ると震えなくなる
+await page.click('#btn-settings');
+await page.waitForTimeout(300);
+await page.click('#set-haptics');
+await page.waitForTimeout(200);
+await page.evaluate(() => { window.__vibes = []; });
+await page.click('#set-try');
+await page.waitForTimeout(300);
+const afterOff = await page.evaluate(() => ({
+  vibes: window.__vibes.length,
+  saved: localStorage.getItem('fishing:haptics'),
+}));
+if (afterOff.vibes > 0) throw new Error('振動を切っても震える');
+if (afterOff.saved !== '0') throw new Error('振動の設定が保存されない');
+await page.click('#set-haptics');
+await page.waitForTimeout(200);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+console.log('振動: 設定で切ると震えなくなり、設定は保存される');
 
 if (errors.length) {
   console.error('コンソールエラー:', errors);
