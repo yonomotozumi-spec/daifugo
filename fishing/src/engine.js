@@ -862,7 +862,8 @@ export function createPlayer(over = {}) {
     dailyDone: 0,  // お題をこなした回数
     weathersSeen: [],   // 釣ったことのある天気
     best: { price: 0, lengthCm: 0, weightKg: 0 },
-    daily: { date: '', quests: [] },
+    daily: { date: '', seen: '', quests: [] },
+    tutorial: { step: 0, done: false },   // はじめての案内
     ...over,
   };
 }
@@ -1016,7 +1017,13 @@ export function normalizePlayer(raw) {
     },
     records: {},
     shinies: {},
-    daily: { date: '', quests: [] },
+    daily: { date: '', seen: '', quests: [] },
+    tutorial: {
+      step: clamp(Math.floor(Number(raw.tutorial?.step) || 0), 0, TUTORIAL.length),
+      done: Boolean(raw.tutorial?.done),
+      hooked: Boolean(raw.tutorial?.hooked),
+      sawQuest: Boolean(raw.tutorial?.sawQuest),
+    },
   };
   const readBook = (raw2, into) => {
     for (const [id, rec] of Object.entries(raw2 || {})) {
@@ -1039,6 +1046,7 @@ export function normalizePlayer(raw) {
   const quests = Array.isArray(raw.daily?.quests) ? raw.daily.quests : [];
   player.daily = {
     date: typeof raw.daily?.date === 'string' ? raw.daily.date : '',
+    seen: typeof raw.daily?.seen === 'string' ? raw.daily.seen : (raw.daily?.date ?? ''),
     quests: quests
       .filter((q) => q && DAILY_KINDS.some((k) => k.id === q.kind) && Number.isFinite(q.goal))
       .map((q) => ({
@@ -1418,11 +1426,20 @@ function rewardFor(kindId, made, ctx) {
   return Math.max(300, Math.round(ctx.unit * weight * 2 / 100) * 100);
 }
 
-/** 日付が変わっていたらお題を引き直す。引き直したら true。 */
+/**
+ * 日付が変わっていたらお題を引き直す。引き直したら true。
+ * 端末の時計を戻しても引き直さない（賞金を何度ももらえてしまうため）。
+ */
 export function refreshDaily(player, dateKey = todayKey()) {
   const daily = player.daily;
-  if (daily && daily.date === dateKey && Array.isArray(daily.quests) && daily.quests.length) return false;
-  player.daily = { date: dateKey, quests: rollDailies(dateKey, player) };
+  const seen = daily?.seen || daily?.date || '';
+  const has = Array.isArray(daily?.quests) && daily.quests.length > 0;
+  if (has && dateKey <= seen) return false;
+  player.daily = {
+    date: dateKey,
+    seen: dateKey > seen ? dateKey : seen,
+    quests: rollDailies(dateKey, player),
+  };
   return true;
 }
 
@@ -1467,6 +1484,160 @@ export function progressDaily(player, event) {
 export function dailyProgress(player) {
   const quests = player.daily?.quests ?? [];
   return { done: quests.filter((q) => q.done).length, total: quests.length };
+}
+
+// ---------------------------------------------------------------- セーブの持ち出し
+
+/**
+ * 書き出しの形。中身を足しても古いデータが読めるように、版を入れておく。
+ * localStorage は端末のデータを消すと一緒に消えてしまうので、
+ * 遊んだ記録を自分で持ち出せるようにする。
+ */
+export const SAVE_FORMAT = 'fishing-save';
+export const SAVE_VERSION = 1;
+
+/** いまの記録を 1 本の文字列にする。 */
+export function exportSave(player, { at = new Date() } = {}) {
+  return JSON.stringify({
+    format: SAVE_FORMAT,
+    version: SAVE_VERSION,
+    savedAt: at.toISOString(),
+    player,
+  });
+}
+
+/**
+ * 書き出した文字列から記録を読み直す。
+ * 書き出しの形でも、セーブそのもの（localStorage の中身）でも受け取る。
+ * @returns {{ok: true, player: object, savedAt: string|null} | {ok: false, error: string}}
+ */
+export function importSave(text) {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed) return { ok: false, error: 'データが空です' };
+  let raw;
+  try {
+    raw = JSON.parse(trimmed);
+  } catch {
+    return { ok: false, error: 'データの形が違います。コピーし損ねていませんか' };
+  }
+  if (!raw || typeof raw !== 'object') return { ok: false, error: 'データの形が違います' };
+
+  const wrapped = raw.format === SAVE_FORMAT;
+  if (!wrapped && !looksLikeSave(raw)) {
+    return { ok: false, error: 'この釣りゲームのデータではないようです' };
+  }
+  if (wrapped && Number(raw.version) > SAVE_VERSION) {
+    return { ok: false, error: '新しい版のデータです。アプリを更新してください' };
+  }
+  const body = wrapped ? raw.player : raw;
+  if (!body || typeof body !== 'object') return { ok: false, error: '中身が入っていません' };
+  return {
+    ok: true,
+    player: normalizePlayer(body),
+    savedAt: wrapped && typeof raw.savedAt === 'string' ? raw.savedAt : null,
+  };
+}
+
+/** 書き出しの形をかぶせていない、素のセーブかどうか。 */
+function looksLikeSave(raw) {
+  return ['money', 'records', 'rods', 'spots', 'casts'].some((key) => key in raw);
+}
+
+/** 書き出したデータの見出し（何匹釣ったころのものか）。 */
+export function saveSummary(player) {
+  return [
+    `所持金 ${Math.round(player?.money ?? 0).toLocaleString('ja-JP')}円`,
+    `図鑑 ${Object.keys(player?.records ?? {}).length} 種`,
+    `Lv.${rankOf(player).level} ${rankOf(player).name}`,
+  ].join(' ・ ');
+}
+
+// ---------------------------------------------------------------- はじめての案内
+
+/**
+ * 最初の数投だけ出す手引き。
+ * need(player) が真になったら次へ進む。全部終わると二度と出ない。
+ */
+export const TUTORIAL = [
+  { id: 'cast', text: 'まずは「キャスト」。竿を振って糸を投げよう', need: (p) => p.casts >= 1 },
+  { id: 'hook', text: 'ウキが沈んだら「合わせる」。一瞬しか猶予はない', need: (p) => p.catches >= 1 || Boolean(p.tutorial?.hooked) },
+  { id: 'reel', text: '長押しで巻ける。魚を緑のバーに入れ続けよう', need: (p) => p.catches >= 1 },
+  { id: 'sell', text: '釣った魚は「売る」でお金になる', need: (p) => p.earned > 0 },
+  { id: 'shop', text: 'お金がたまったらショップへ。竿を買うと大きい魚が獲れる', need: (p) => p.rods.length > 1 },
+  { id: 'quest', text: '🏅 記録に、熟練度と実績と今日のお題がまとまっている', need: (p) => Boolean(p.tutorial?.sawQuest) },
+];
+
+/** いま出す案内。終わっていれば null。 */
+export function tutorialStep(player) {
+  const state = player?.tutorial;
+  if (!state || state.done) return null;
+  const step = TUTORIAL[state.step ?? 0];
+  if (!step) return null;
+  return step;
+}
+
+/**
+ * 案内を 1 つ進める。条件を満たしていなければ何もしない。
+ * @returns {boolean} 進んだかどうか
+ */
+export function advanceTutorial(player) {
+  const state = player?.tutorial;
+  if (!state || state.done) return false;
+  let moved = false;
+  // 一気に条件を満たしていることもあるので、進められるだけ進める
+  while (!state.done) {
+    const step = TUTORIAL[state.step];
+    if (!step) { state.done = true; moved = true; break; }
+    if (!step.need(player)) break;
+    state.step += 1;
+    moved = true;
+    if (state.step >= TUTORIAL.length) state.done = true;
+  }
+  return moved;
+}
+
+// ---------------------------------------------------------------- 手ごたえ（振動）
+
+/**
+ * 振動のパターン（ミリ秒。鳴らす・休む・鳴らす…の順）。
+ * 何が起きたのかを、画面を見ていなくても指で分かるように変えてある。
+ *
+ * iPhone / iPad の Safari は振動に対応していないので、Android などでだけ効く。
+ */
+export const HAPTICS = {
+  bite: [35],
+  catch: [25, 45, 90],
+  big: [30, 40, 30, 40, 140],
+  boss: [60, 60, 60, 60, 220],
+  shiny: [20, 30, 20, 30, 20, 30, 140],
+  record: [25, 40, 25, 40, 110],
+  junk: [20],
+  snap: [70, 50, 70],
+  escape: [40],
+  level: [30, 50, 30, 50, 90],
+  achieve: [30, 50, 30],
+  quest: [25, 40, 60],
+  rage: [80, 40, 80],
+  dash: [16],
+  hook: [40, 60, 40, 60, 90],
+  heavy: [20],      // ふつうの魚に掛かった合図
+  sell: [15],       // 売れた
+  event: [20, 40, 20],  // 大漁タイムなどの始まり
+};
+
+/**
+ * 釣れた 1 匹に合う振動を選ぶ。
+ * 珍しいものほど長く、刻みも増える。
+ */
+export function hapticFor(result) {
+  const fish = result?.fish;
+  if (!fish) return HAPTICS.catch;
+  if (fish.boss) return HAPTICS.boss;
+  if (result.shiny) return HAPTICS.shiny;
+  if (fish.junk) return HAPTICS.junk;
+  if (result.isNew) return HAPTICS.record;
+  if ((result.sizeRatio ?? 0) >= 0.7) return HAPTICS.big;
+  return HAPTICS.catch;
 }
 
 // ---------------------------------------------------------------- 表示用
