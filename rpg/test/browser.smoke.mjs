@@ -223,11 +223,11 @@ if (met) {
 await page.evaluate(() => {
   for (const m of window.rpg.party) { m.exp = 100; m.weapon = 'steel'; m.hp = 60; }
 });
-await page.evaluate(() => window.rpg.encounter('slime'));
+await page.evaluate(() => window.rpg.encounter('m11'));
 await page.waitForTimeout(600);
 await fight('attack');
 const won = await game();
-ok('ぷるんに 勝って 全員が経験値をもらえた', won.party.every((m) => m.exp > 100));
+ok('炭火尾のポルカに 勝って 全員が経験値をもらえた', won.party.every((m) => m.exp > 100));
 await shot('06-after-battle');
 
 // ---------------------------------------------------------------- ほらあな・城

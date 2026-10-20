@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-import { ART, artOf, drawMonster, fade, shade } from '../src/monsters.js';
+import { ART, SPRITE_IDS, artOf, drawMonster, fade, shade, spriteSrc } from '../src/monsters.js';
 import { MONSTERS } from '../src/engine.js';
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -9,13 +11,23 @@ const PAINTS = ['blob', 'beast', 'bug', 'mushroom', 'frog', 'humanoid', 'robed',
 
 test('すべての魔物に 絵が用意されている', () => {
   for (const monster of MONSTERS) {
-    assert.ok(ART[monster.id], `${monster.name} の絵がない`);
+    assert.ok(ART[monster.id] || SPRITE_IDS.includes(monster.id), `${monster.name} の絵がない`);
+  }
+});
+
+test('ふつうの魔物は 50 体とも 絵のファイルがある', () => {
+  const normal = MONSTERS.filter((m) => !m.boss);
+  assert.equal(normal.length, 50);
+  for (const monster of normal) {
+    const src = spriteSrc(monster.id);
+    assert.ok(src, `${monster.name} の絵の場所がない`);
+    assert.ok(existsSync(fileURLToPath(src)), `${monster.name} の絵のファイルがない`);
   }
 });
 
 test('絵のデータに 幽霊の魔物がいない', () => {
   const ids = new Set(MONSTERS.map((m) => m.id));
-  for (const id of Object.keys(ART)) {
+  for (const id of [...Object.keys(ART), ...SPRITE_IDS]) {
     assert.ok(ids.has(id), `${id} は もう魔物として存在しない`);
   }
 });
@@ -32,12 +44,6 @@ test('絵の設定が 壊れていない', () => {
     if (art.mouth) assert.ok(['smile', 'frown', 'fang'].includes(art.mouth), `${id}: 知らない口`);
     if (art.weapon) assert.ok([true, 'axe', 'sword', 'bow'].includes(art.weapon), `${id}: 知らない武器`);
   }
-});
-
-test('型ごとに ちゃんと使われている', () => {
-  const used = new Set(Object.values(ART).map((a) => a.paint));
-  for (const paint of used) assert.ok(PAINTS.includes(paint));
-  assert.ok(used.size >= 10, `絵の型が 少なすぎる: ${used.size}`);
 });
 
 test('ボスには それぞれ 別の見た目がある', () => {

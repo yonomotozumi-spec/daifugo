@@ -9,6 +9,9 @@
  *   ・待機モーションは 呼吸（たて方向の伸び縮み）＋ 部位ごとの揺れ
  *
  * ART[id] が その魔物の「型（paint）と色」。engine.js の MONSTERS と ID をそろえる。
+ *
+ * ふつうの魔物（m01〜m50）は 描きこみではなく 絵（rpg/img/monsters/<id>.webp）を使う。
+ * ボスだけは これまでどおり canvas で描く。
  */
 
 const TAU = Math.PI * 2;
@@ -1131,33 +1134,6 @@ const PAINTERS = {
 // ---------------------------------------------------------------- 魔物ごとの見た目
 
 export const ART = {
-  slime: { paint: 'blob', body: '#5bd57f', eye: '#1f5b39', mood: 'cute', mouth: 'smile' },
-  pup: { paint: 'beast', body: '#d9a066', eye: '#5a3b1c', mood: 'cute', mouth: 'fang' },
-  rat: { paint: 'beast', body: '#a9a29a', eye: '#4a2b2b', thinTail: true, mood: 'fierce' },
-  mush: { paint: 'mushroom', body: '#e8590c', eye: '#4b2b12', mood: 'calm' },
-  bee: { paint: 'bug', body: '#ffd43b', eye: '#4a3a10', wings: true, stripes: true, stinger: true },
-  frog: { paint: 'frog', body: '#74b816', eye: '#2f4a10' },
-  goblin: { paint: 'humanoid', body: '#e07a5f', skin: '#8bbf5a', cloth: '#7a4b2a', ears: true, weapon: 'axe', eye: '#3d2a12' },
-  bandit: { paint: 'humanoid', skin: '#e0b088', cloth: '#8a5a3a', hood: true, weapon: 'bow', eye: '#3b2412' },
-  wolf: { paint: 'beast', body: '#9aa5b1', eye: '#c0392b', mood: 'fierce', mane: true },
-  bat: { paint: 'flyer', body: '#868e96', eye: '#ffd166', ears: true, glow: '#ffd166' },
-  mage: { paint: 'robed', cloth: '#5b3fa8', skin: '#e6d5bd', hat: true, hatColor: '#4a3390', eye: '#2b1d55', orb: '#b197fc' },
-  armor: { paint: 'armor', body: '#adb5bd', glow: '#8fe3ff' },
-  harpy: { paint: 'flyer', body: '#ced4da', eye: '#c92a2a', slowWings: false, tail: true },
-  worm: { paint: 'worm', body: '#c0a080', eye: '#4a3520' },
-  ogre: { paint: 'humanoid', skin: '#c2703d', cloth: '#5f4630', big: true, horns: true, weapon: 'axe', eye: '#3a1f10' },
-  skeleton: { paint: 'humanoid', skin: '#e9ecef', cloth: '#495057', bone: true, weapon: 'sword', glow: '#8fe3ff' },
-  ghost: { paint: 'ghost', body: '#a5d8ff', glow: '#e7f5ff', alpha: 0.85 },
-  lizard: { paint: 'beast', body: '#82c91e', eye: '#c92a2a', spikes: true, mood: 'fierce' },
-  spider: { paint: 'bug', body: '#495057', eye: '#ff6b6b', legs: true, mood: 'fierce' },
-  lava: { paint: 'golem', body: '#7a3b22', molten: '#ff922b', glow: '#ffd43b' },
-  golem: { paint: 'golem', body: '#8d99ae', glow: '#ffd166' },
-  witch: { paint: 'robed', cloth: '#7b2d8b', skin: '#dcc7b0', hat: true, hatColor: '#5f1f6e', eye: '#3d1148', orb: '#da77f2' },
-  reaper: { paint: 'ghost', body: '#3b3550', hood: '#241f36', scythe: true, glow: '#b197fc', alpha: 1 },
-  knight: { paint: 'armor', body: '#6b3550', cape: '#8b1e3f', plume: '#f06595', glow: '#ff6b6b' },
-  mask: { paint: 'humanoid', skin: '#c9b6d8', cloth: '#5a3d78', mask: '#e599f7', weapon: 'sword', glow: '#ffe066' },
-  wyvern: { paint: 'flyer', body: '#748ffc', eye: '#ffd43b', snout: true, tail: true, horns: true, slowWings: true },
-  dragon: { paint: 'flyer', body: '#69db7c', eye: '#ffd43b', snout: true, tail: true, horns: true, big: true, slowWings: true },
   golva: { paint: 'golem', body: '#adb5bd', glow: '#ff8787', crown: true },
   gald: { paint: 'armor', body: '#8a8f98', cape: '#3b3550', plume: '#ffa8a8', weapon: true, glow: '#ff6b6b' },
   yugd: { paint: 'tree', body: '#51cf66', trunk: '#8a6234', glow: '#ffe066' },
@@ -1167,6 +1143,64 @@ export const ART = {
 
 export const artOf = (id) => ART[id] || null;
 
+// ---------------------------------------------------------------- 絵を使う魔物
+
+/** 絵のある魔物の ID（m01〜m50）。 */
+export const SPRITE_IDS = Array.from({ length: 50 }, (_, i) => `m${String(i + 1).padStart(2, '0')}`);
+
+export const spriteSrc = (id) => (SPRITE_IDS.includes(id) ? new URL(`../img/monsters/${id}.webp`, import.meta.url).href : null);
+
+const sprites = new Map();     // id → { img, ready }
+
+/** 絵を読みこんでおく。ブラウザの外（テスト）では なにもしない。 */
+function sprite(id) {
+  if (sprites.has(id)) return sprites.get(id);
+  const src = spriteSrc(id);
+  if (!src || typeof Image === 'undefined') return null;
+  const entry = { img: new Image(), ready: false };
+  entry.img.decoding = 'async';
+  entry.img.onload = () => { entry.ready = true; };
+  entry.img.src = src;
+  sprites.set(id, entry);
+  return entry;
+}
+
+/** 最初の戦闘で 待たされないように、先に ぜんぶ 読みこみを始める。 */
+export function preloadSprites() {
+  for (const id of SPRITE_IDS) sprite(id);
+}
+
+let flashLayer = null;        // 白く光らせるときの 下書き用
+
+/** 絵の魔物を描く。呼吸のように たてに 伸び縮みさせる。 */
+function drawSprite(ctx, entry, size, t, flash) {
+  const { img } = entry;
+  const scale = Math.min((size * 1.5) / img.naturalWidth, (size * 1.05) / img.naturalHeight);
+  const w = img.naturalWidth * scale;
+  const h = img.naturalHeight * scale;
+  const breath = 1 + Math.sin(t * 2.4) * 0.018;
+  const sway = Math.sin(t * 1.3) * 0.012;
+
+  ctx.save();
+  ctx.translate(0, h / 2);                 // 足もとを 軸にして 揺らす
+  ctx.rotate(sway);
+  ctx.scale(1 / Math.sqrt(breath), breath);
+  ctx.drawImage(img, -w / 2, -h, w, h);
+  if (flash > 0 && typeof document !== 'undefined') {
+    // 絵の形だけを 白く光らせる。背景まで白くしないよう 別の下書きで 切り抜く
+    flashLayer ||= document.createElement('canvas');
+    flashLayer.width = Math.ceil(w);
+    flashLayer.height = Math.ceil(h);
+    const fc = flashLayer.getContext('2d');
+    fc.drawImage(img, 0, 0, w, h);
+    fc.globalCompositeOperation = 'source-in';
+    fc.fillStyle = `rgba(255,255,255,${Math.min(0.85, flash)})`;
+    fc.fillRect(0, 0, w, h);
+    ctx.drawImage(flashLayer, -w / 2, -h, w, h);
+  }
+  ctx.restore();
+}
+
 /**
  * 魔物を 1 体描く。
  *   cx, cy … 足もとではなく 体の中心
@@ -1174,6 +1208,17 @@ export const artOf = (id) => ART[id] || null;
  *   t     … 秒（待機モーション用）
  */
 export function drawMonster(ctx, id, cx, cy, size, t = 0, { flash = 0, fade = 0 } = {}) {
+  const entry = sprite(id);
+  if (entry) {
+    if (!entry.ready) return true;         // 読みこみ中は 何も出さない（一瞬で終わる）
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (fade) ctx.globalAlpha = Math.max(0, 1 - fade);
+    drawSprite(ctx, entry, size, t, flash);
+    ctx.restore();
+    return true;
+  }
+
   const art = ART[id];
   if (!art) return false;
   const painter = PAINTERS[art.paint];

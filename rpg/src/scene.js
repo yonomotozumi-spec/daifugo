@@ -4,7 +4,7 @@
  */
 
 import { chestsOf, inside, mapHeight, mapWidth, tileAt } from './world.js';
-import { drawMonster, shade as shadeHex } from './monsters.js';
+import { drawMonster, preloadSprites, shade as shadeHex } from './monsters.js';
 
 /** タイルごとに決まる 0〜1 の値。草の生え方などをマスごとに固定するのに使う。 */
 function hash(x, y) {
@@ -94,6 +94,7 @@ const roundRect = (ctx, x, y, w, h, r) => {
 
 export class Scene {
   constructor(canvas) {
+    preloadSprites();          // 魔物の絵は 先に読みこんでおく
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.tile = 32;
