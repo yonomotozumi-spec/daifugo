@@ -15,9 +15,9 @@ test('すべての魔物に 絵が用意されている', () => {
   }
 });
 
-test('ふつうの魔物は 50 体とも 絵のファイルがある', () => {
+test('ふつうの魔物は どれも 絵のファイルがある', () => {
   const normal = MONSTERS.filter((m) => !m.boss);
-  assert.equal(normal.length, 50);
+  assert.equal(normal.length, SPRITE_IDS.length);
   for (const monster of normal) {
     const src = spriteSrc(monster.id);
     assert.ok(src, `${monster.name} の絵の場所がない`);

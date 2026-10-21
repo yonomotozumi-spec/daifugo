@@ -10,7 +10,7 @@
  *
  * ART[id] が その魔物の「型（paint）と色」。engine.js の MONSTERS と ID をそろえる。
  *
- * ふつうの魔物（m01〜m50）は 描きこみではなく 絵（rpg/img/monsters/<id>.webp）を使う。
+ * ふつうの魔物（SPRITE_IDS）は 描きこみではなく 絵（rpg/img/monsters/<id>.webp）を使う。
  * ボスだけは これまでどおり canvas で描く。
  */
 
@@ -1145,8 +1145,12 @@ export const artOf = (id) => ART[id] || null;
 
 // ---------------------------------------------------------------- 絵を使う魔物
 
-/** 絵のある魔物の ID（m01〜m50）。 */
-export const SPRITE_IDS = Array.from({ length: 50 }, (_, i) => `m${String(i + 1).padStart(2, '0')}`);
+/**
+ * 絵のある魔物の ID。画集の番号どおり（m01〜m12・m43〜m50）。
+ * 13〜42 番は 画集の絵に 名札が重なって 体の一部が欠けているので、きれいな絵が届くまで 出さない。
+ */
+export const SPRITE_IDS = ['m01', 'm02', 'm03', 'm04', 'm05', 'm06', 'm07', 'm08', 'm09', 'm10', 'm11', 'm12',
+  'm43', 'm44', 'm45', 'm46', 'm47', 'm48', 'm49', 'm50'];
 
 export const spriteSrc = (id) => (SPRITE_IDS.includes(id) ? new URL(`../img/monsters/${id}.webp`, import.meta.url).href : null);
 
