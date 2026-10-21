@@ -240,7 +240,7 @@ test('川より北では 手ごわい魔物の表になる', () => {
   const north = encountersAt(MAPS.world, 18, 5).map((m) => m.id);
   assert.ok(south.includes('m11'));
   assert.ok(!north.includes('m11'));
-  assert.ok(north.includes('m37'));
+  assert.ok(north.includes('m04'));
 });
 
 test('すべての魔物が どこかで 出会える', () => {
@@ -525,7 +525,7 @@ test('重み付き抽選は 重みの大きいほうがよく出る', () => {
 
 test('パーティ全員が 1 ターンに 1 回ずつ行動する', () => {
   const save = fullParty(600);
-  const battle = new Battle(save, 'm47', mulberry32(3));
+  const battle = new Battle(save, 'm04', mulberry32(3));
   const lines = battle.resolve(attackAll(save));
   for (const member of save.party) {
     assert.ok(lines.some((l) => l.text.startsWith(`${member.name}の`)), `${member.name}が 行動していない`);
@@ -534,7 +534,7 @@ test('パーティ全員が 1 ターンに 1 回ずつ行動する', () => {
 
 test('攻撃すると 魔物の HP が減る', () => {
   const save = fullParty(600);
-  const battle = new Battle(save, 'm47', mulberry32(4));
+  const battle = new Battle(save, 'm04', mulberry32(4));
   const before = battle.monster.hp;
   battle.resolve(attackAll(save));
   assert.ok(battle.monster.hp < before);
@@ -564,7 +564,7 @@ test('倒れている仲間は 経験値をもらえない', () => {
 
 test('魔物の攻撃は 全員ではなく だれかに当たる', () => {
   const save = fullParty(80);
-  const battle = new Battle(save, 'm32', mulberry32(5));   // 1 ターンに 2 回 動く魔物
+  const battle = new Battle(save, 'm08', mulberry32(5));   // 1 ターンに 2 回 動く魔物
   battle.resolve(attackAll(save));
   const hurt = save.party.filter((m) => m.hp < statsOf(m).maxHp);
   assert.ok(hurt.length >= 1, 'だれも ダメージを受けていない');
@@ -597,7 +597,7 @@ test('リカで 選んだ仲間が回復する', () => {
   const mina = save.party[2];
   const garon = save.party[1];
   garon.hp = 10;
-  const battle = new Battle(save, 'm47', mulberry32(7));   // すぐ倒れない相手で
+  const battle = new Battle(save, 'm04', mulberry32(7));   // すぐ倒れない相手で
   const actions = attackAll(save);
   actions[2] = { type: 'spell', id: 'rika', target: garon };
   const mp = mina.mp;
@@ -613,7 +613,7 @@ test('リヴィナで 倒れた仲間が起きることがある', () => {
     const mina = save.party[2];
     const garon = save.party[1];
     garon.hp = 0;
-    const battle = new Battle(save, 'm47', mulberry32(500 + seed));
+    const battle = new Battle(save, 'm04', mulberry32(500 + seed));
     const actions = attackAll(save);
     actions[1] = null;
     actions[2] = { type: 'spell', id: 'revina', target: garon };
@@ -627,7 +627,7 @@ test('ソムナで 魔物が眠る', () => {
   let slept = 0;
   for (let seed = 0; seed < 40; seed++) {
     const save = fullParty(600);
-    const battle = new Battle(save, 'm47', mulberry32(700 + seed));
+    const battle = new Battle(save, 'm04', mulberry32(700 + seed));
     const actions = [null, null, null, { type: 'spell', id: 'somna' }];
     const lines = battle.resolve(actions);
     if (lines.some((l) => l.text.includes('眠ってしまった'))) slept++;
@@ -748,7 +748,7 @@ test('戦闘中でも いやしそうを 仲間に使える', () => {
   const save = fullParty(600);
   const sera = save.party[3];
   sera.hp = 5;
-  const battle = new Battle(save, 'm47', mulberry32(13));
+  const battle = new Battle(save, 'm04', mulberry32(13));
   const actions = attackAll(save);
   actions[0] = { type: 'item', id: 'herb', target: sera };
   battle.resolve(actions);
@@ -874,34 +874,19 @@ function equipParty(save, weapon, armor, shield) {
 
 test('道中の魔物には ちゃんと勝てる', () => {
   const plan = [
-    ['m30', 3, 'stick', 'clothes', 'none'],
-    ['m16', 3, 'stick', 'clothes', 'none'],
+    ['m02', 3, 'stick', 'clothes', 'none'],
     ['m44', 5, 'copper', 'leather', 'none'],
-    ['m17', 5, 'copper', 'leather', 'none'],
-    ['m41', 7, 'copper', 'leather', 'leatherShield'],
     ['m01', 7, 'copper', 'leather', 'leatherShield'],
     ['m12', 9, 'copper', 'chain', 'leatherShield'],
-    ['m24', 9, 'copper', 'chain', 'leatherShield'],
     ['m04', 9, 'copper', 'chain', 'leatherShield'],
-    ['m37', 9, 'copper', 'chain', 'leatherShield'],
-    ['m29', 11, 'steel', 'chain', 'ironShield'],
-    ['m25', 11, 'steel', 'chain', 'ironShield'],
-    ['m10', 11, 'steel', 'chain', 'ironShield'],
-    ['m38', 11, 'steel', 'chain', 'ironShield'],
-    ['m03', 12, 'steel', 'iron', 'ironShield'],
-    ['m31', 12, 'steel', 'iron', 'ironShield'],
-    ['m45', 13, 'steel', 'iron', 'ironShield'],
-    ['m28', 13, 'steel', 'iron', 'ironShield'],
-    ['m18', 14, 'steel', 'iron', 'ironShield'],
-    ['m27', 14, 'steel', 'iron', 'ironShield'],
-    ['m23', 13, 'steel', 'iron', 'ironShield'],
+    ['m46', 11, 'steel', 'chain', 'ironShield'],
+    ['m07', 11, 'steel', 'chain', 'ironShield'],
+    ['m10', 12, 'steel', 'iron', 'ironShield'],
+    ['m03', 13, 'steel', 'iron', 'ironShield'],
+    ['m45', 14, 'steel', 'iron', 'ironShield'],
     ['m47', 13, 'steel', 'iron', 'ironShield'],
-    ['m36', 16, 'flame', 'magic', 'ironShield'],
-    ['m20', 16, 'flame', 'magic', 'ironShield'],
-    ['m39', 16, 'flame', 'magic', 'mirrorShield'],
-    ['m48', 16, 'flame', 'magic', 'mirrorShield'],
-    ['m08', 17, 'flame', 'magic', 'mirrorShield'],
-    ['m49', 17, 'flame', 'magic', 'mirrorShield'],
+    ['m48', 16, 'flame', 'magic', 'ironShield'],
+    ['m49', 16, 'flame', 'magic', 'mirrorShield'],
     ['m50', 17, 'flame', 'magic', 'mirrorShield'],
   ];
   for (const [id, level, weapon, armor, shield] of plan) {

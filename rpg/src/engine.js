@@ -529,8 +529,7 @@ export function stayInn(save) {
  * actions は行動の抽選表。kind は attack / spell / breath / heal / sleep。
  * acts は 1 ターンに動く回数、resist は炎・爆発系が効きにくくなる割合。
  *
- * ふつうの魔物（m01〜m50）は「薄明の辺境」の 50 体。弱い順に並べてある。
- * 絵は rpg/img/monsters/<id>.webp。
+ * ふつうの魔物は「薄明の辺境」の画集から。弱い順に並べてある。絵は rpg/img/monsters/<id>.webp。
  */
 export const MONSTERS = [
   {
@@ -539,244 +538,94 @@ export const MONSTERS = [
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
-    id: 'm35', name: '火花縫いのチッカ', emoji: '👾',
-    hp: 16, atk: 7, def: 4, agi: 8, exp: 4, gold: 7, resist: 0,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
     id: 'm06', name: '苔灯りのフルン', emoji: '👾',
-    hp: 18, atk: 8, def: 4, agi: 12, exp: 5, gold: 8, resist: 0,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm19', name: '鏡苔のピリカ', emoji: '👾',
-    hp: 20, atk: 9, def: 5, agi: 11, exp: 6, gold: 9, resist: 0,
+    hp: 19, atk: 8, def: 4, agi: 11, exp: 5, gold: 8, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm02', name: '硝子羽のミルカ', emoji: '👾',
-    hp: 22, atk: 9, def: 5, agi: 9, exp: 7, gold: 10, resist: 0.02,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm30', name: '鍵穴顔のキリオ', emoji: '👾',
-    hp: 25, atk: 10, def: 7, agi: 6, exp: 8, gold: 11, resist: 0.13,
+    hp: 25, atk: 10, def: 7, agi: 6, exp: 7, gold: 10, resist: 0.15,
     actions: [{ kind: 'attack', w: 80 }, { kind: 'sleep', w: 20 }],
-  },
-  {
-    id: 'm16', name: '枯枝走りのツグ', emoji: '👾',
-    hp: 27, atk: 11, def: 8, agi: 7, exp: 9, gold: 12, resist: 0.16,
-    actions: [{ kind: 'attack', w: 80 }, { kind: 'sleep', w: 20 }],
-  },
-  {
-    id: 'm22', name: '泡針のカプラ', emoji: '👾',
-    hp: 29, atk: 12, def: 7, agi: 14, exp: 10, gold: 13, resist: 0.06,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm40', name: 'ひび歌いのポルン', emoji: '👾',
-    hp: 32, atk: 14, def: 7, agi: 16, exp: 11, gold: 14, resist: 0,
-    actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm05', name: '綿雲のネムリネ', emoji: '👾',
-    hp: 38, atk: 15, def: 9, agi: 10, exp: 12, gold: 15, resist: 0,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm13', name: '燐泥のドロッサ', emoji: '👾',
-    hp: 44, atk: 17, def: 9, agi: 8, exp: 13, gold: 16, resist: 0,
+    hp: 31, atk: 13, def: 7, agi: 17, exp: 10, gold: 13, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm44', name: '枝影のササメ', emoji: '👾',
-    hp: 50, atk: 19, def: 10, agi: 9, exp: 15, gold: 18, resist: 0,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm17', name: '真珠喉のナミオ', emoji: '👾',
-    hp: 54, atk: 21, def: 11, agi: 11, exp: 16, gold: 20, resist: 0,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm41', name: '蓮傘のフワリ', emoji: '👾',
-    hp: 57, atk: 23, def: 12, agi: 13, exp: 18, gold: 23, resist: 0,
+    hp: 46, atk: 17, def: 9, agi: 8, exp: 13, gold: 16, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm01', name: '灰冠のモグリス', emoji: '👾',
-    hp: 68, atk: 28, def: 14, agi: 15, exp: 21, gold: 26, resist: 0,
+    hp: 57, atk: 23, def: 12, agi: 13, exp: 18, gold: 23, resist: 0,
     actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm33', name: '銀苔のウルシ', emoji: '👾',
-    hp: 81, atk: 33, def: 16, agi: 16, exp: 26, gold: 28, resist: 0, acts: 2,
-    actions: [{ kind: 'attack', w: 88 }, { kind: 'sleep', w: 12 }],
   },
   {
     id: 'm09', name: '逆さ潮のユラメ', emoji: '👾',
-    hp: 76, atk: 32, def: 17, agi: 21, exp: 27, gold: 31, resist: 0, acts: 2,
+    hp: 79, atk: 32, def: 16, agi: 18, exp: 27, gold: 29, resist: 0, acts: 2,
     actions: [{ kind: 'attack', w: 88 }, { kind: 'sleep', w: 12 }],
   },
   {
-    id: 'm26', name: '縫い雲のハルネ', emoji: '👾',
-    hp: 70, atk: 30, def: 18, agi: 26, exp: 29, gold: 34, resist: 0.01, acts: 2,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm14', name: '藻冠のメルル', emoji: '👾',
-    hp: 68, atk: 26, def: 16, agi: 19, exp: 31, gold: 38, resist: 0.17,
-    actions: [{ kind: 'attack', w: 45 }, { kind: 'spell', id: 'flam', w: 40 }, { kind: 'heal', power: 40, w: 15 }],
-  },
-  {
     id: 'm43', name: '夕凪のイオラ', emoji: '👾',
-    hp: 70, atk: 23, def: 15, agi: 14, exp: 33, gold: 42, resist: 0.28,
+    hp: 68, atk: 25, def: 16, agi: 19, exp: 31, gold: 39, resist: 0.17,
     actions: [{ kind: 'attack', w: 45 }, { kind: 'spell', id: 'flam', w: 40 }, { kind: 'heal', power: 40, w: 15 }],
   },
   {
     id: 'm04', name: '鐘殻コロネ', emoji: '👾',
-    hp: 93, atk: 32, def: 23, agi: 12, exp: 37, gold: 46, resist: 0.18,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm37', name: '砂時計ヤドカリ', emoji: '👾',
-    hp: 108, atk: 38, def: 27, agi: 13, exp: 41, gold: 49, resist: 0.09,
+    hp: 108, atk: 37, def: 27, agi: 10, exp: 40, gold: 48, resist: 0.11,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm12', name: '針雨のセキラ', emoji: '👾',
-    hp: 101, atk: 37, def: 24, agi: 23, exp: 43, gold: 52, resist: 0.03, acts: 2,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm24', name: '雨樋のヌルン', emoji: '👾',
-    hp: 103, atk: 37, def: 24, agi: 26, exp: 46, gold: 55, resist: 0.05, acts: 2,
+    hp: 107, atk: 38, def: 26, agi: 23, exp: 47, gold: 56, resist: 0.08, acts: 2,
     actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm46', name: '月砂のネリク', emoji: '👾',
-    hp: 121, atk: 40, def: 31, agi: 14, exp: 50, gold: 58, resist: 0.18,
-    actions: [{ kind: 'attack', w: 82 }, { kind: 'breath', power: [20, 28], w: 18 }],
+    hp: 161, atk: 49, def: 31, agi: 8, exp: 56, gold: 65, resist: 0.15,
+    actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm07', name: '砂紡ぎのラシャク', emoji: '👾',
-    hp: 142, atk: 45, def: 33, agi: 8, exp: 54, gold: 62, resist: 0.21,
-    actions: [{ kind: 'attack', w: 82 }, { kind: 'breath', power: [20, 28], w: 18 }],
-  },
-  {
-    id: 'm29', name: '波紋喰いのラグ', emoji: '👾',
-    hp: 166, atk: 50, def: 31, agi: 8, exp: 57, gold: 66, resist: 0.13,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm25', name: '星屑ふるいのシェマ', emoji: '👾',
-    hp: 165, atk: 51, def: 30, agi: 11, exp: 60, gold: 70, resist: 0.1,
-    actions: [{ kind: 'attack', w: 100 }],
+    hp: 144, atk: 48, def: 30, agi: 16, exp: 65, gold: 75, resist: 0.12, acts: 2,
+    actions: [{ kind: 'attack', w: 85 }, { kind: 'sleep', w: 15 }],
   },
   {
     id: 'm10', name: '霜笛のハクル', emoji: '👾',
-    hp: 149, atk: 49, def: 30, agi: 15, exp: 64, gold: 74, resist: 0.1, acts: 2,
-    actions: [{ kind: 'attack', w: 85 }, { kind: 'sleep', w: 15 }],
-  },
-  {
-    id: 'm38', name: '霧綴りのユビラ', emoji: '👾',
-    hp: 135, atk: 47, def: 28, agi: 19, exp: 68, gold: 78, resist: 0.24, acts: 2,
-    actions: [{ kind: 'attack', w: 85 }, { kind: 'sleep', w: 15 }],
+    hp: 139, atk: 49, def: 29, agi: 20, exp: 75, gold: 85, resist: 0.34, acts: 2,
+    actions: [{ kind: 'attack', w: 70 }, { kind: 'sleep', w: 30 }],
   },
   {
     id: 'm03', name: '藍沼のトロム', emoji: '👾',
-    hp: 122, atk: 46, def: 26, agi: 23, exp: 71, gold: 81, resist: 0.42, acts: 2,
-    actions: [{ kind: 'attack', w: 70 }, { kind: 'sleep', w: 30 }],
-  },
-  {
-    id: 'm31', name: '白骨花のシロマ', emoji: '👾',
-    hp: 140, atk: 50, def: 30, agi: 20, exp: 76, gold: 86, resist: 0.34, acts: 2,
-    actions: [{ kind: 'attack', w: 70 }, { kind: 'sleep', w: 30 }],
-  },
-  {
-    id: 'm21', name: '灯芯鹿のエンリ', emoji: '👾',
-    hp: 164, atk: 54, def: 34, agi: 14, exp: 80, gold: 90, resist: 0.21, acts: 2,
-    actions: [{ kind: 'attack', w: 75 }, { kind: 'breath', power: [24, 34], w: 25 }],
+    hp: 185, atk: 56, def: 36, agi: 20, exp: 92, gold: 102, resist: 0.16, acts: 2,
+    actions: [{ kind: 'attack', w: 78 }, { kind: 'sleep', w: 22 }],
   },
   {
     id: 'm45', name: '硫黄泡のブクン', emoji: '👾',
-    hp: 178, atk: 55, def: 35, agi: 18, exp: 88, gold: 98, resist: 0.17, acts: 2,
-    actions: [{ kind: 'attack', w: 78 }, { kind: 'sleep', w: 22 }],
-  },
-  {
-    id: 'm28', name: '樹脂鎧のマクル', emoji: '👾',
-    hp: 192, atk: 56, def: 36, agi: 22, exp: 96, gold: 106, resist: 0.17, acts: 2,
-    actions: [{ kind: 'attack', w: 78 }, { kind: 'sleep', w: 22 }],
-  },
-  {
-    id: 'm18', name: '錆雪のグラネ', emoji: '👾',
-    hp: 213, atk: 59, def: 39, agi: 15, exp: 106, gold: 119, resist: 0.46,
+    hp: 238, atk: 63, def: 43, agi: 9, exp: 118, gold: 136, resist: 0.61,
     actions: [{ kind: 'attack', w: 55 }, { kind: 'breath', power: [34, 46], w: 45 }],
-  },
-  {
-    id: 'm27', name: '炉心蛙のゴッパ', emoji: '👾',
-    hp: 235, atk: 63, def: 43, agi: 10, exp: 117, gold: 134, resist: 0.64,
-    actions: [{ kind: 'attack', w: 55 }, { kind: 'breath', power: [34, 46], w: 45 }],
-  },
-  {
-    id: 'm23', name: '磁砂のオルカン', emoji: '👾',
-    hp: 262, atk: 67, def: 47, agi: 7, exp: 128, gold: 152, resist: 0.35,
-    actions: [{ kind: 'attack', w: 100 }],
   },
   {
     id: 'm47', name: '雪煤のグルム', emoji: '👾',
-    hp: 266, atk: 66, def: 48, agi: 9, exp: 137, gold: 167, resist: 0.19,
-    actions: [{ kind: 'attack', w: 100 }],
-  },
-  {
-    id: 'm15', name: '割れ月のオルド', emoji: '👾',
-    hp: 221, atk: 55, def: 40, agi: 17, exp: 142, gold: 172, resist: 0.32, acts: 2,
+    hp: 235, atk: 58, def: 43, agi: 14, exp: 140, gold: 170, resist: 0.28, acts: 2,
     actions: [{ kind: 'attack', w: 35 }, { kind: 'spell', id: 'flamra', w: 35 }, { kind: 'heal', power: 90, w: 15 }, { kind: 'sleep', w: 15 }],
-  },
-  {
-    id: 'm34', name: '泥鐘のダンゴル', emoji: '👾',
-    hp: 210, atk: 52, def: 39, agi: 24, exp: 152, gold: 181, resist: 0.38, acts: 2,
-    actions: [{ kind: 'attack', w: 35 }, { kind: 'spell', id: 'flamra', w: 35 }, { kind: 'heal', power: 90, w: 15 }, { kind: 'sleep', w: 15 }],
-  },
-  {
-    id: 'm36', name: '深藍のノコル', emoji: '👾',
-    hp: 244, atk: 63, def: 45, agi: 28, exp: 168, gold: 194, resist: 0.32, acts: 2,
-    actions: [{ kind: 'attack', w: 65 }, { kind: 'spell', id: 'flamra', w: 20 }, { kind: 'sleep', w: 15 }],
-  },
-  {
-    id: 'm20', name: '風穴喰いのゼルバ', emoji: '👾',
-    hp: 277, atk: 70, def: 50, agi: 28, exp: 185, gold: 211, resist: 0.27, acts: 2,
-    actions: [{ kind: 'attack', w: 65 }, { kind: 'spell', id: 'flamra', w: 20 }, { kind: 'sleep', w: 15 }],
-  },
-  {
-    id: 'm42', name: '黒曜のマガツメ', emoji: '👾',
-    hp: 309, atk: 73, def: 53, agi: 25, exp: 204, gold: 233, resist: 0.22, acts: 2,
-    actions: [{ kind: 'attack', w: 80 }, { kind: 'breath', power: [30, 42], w: 20 }],
-  },
-  {
-    id: 'm32', name: '鉛雲のモウグ', emoji: '👾',
-    hp: 313, atk: 75, def: 55, agi: 25, exp: 224, gold: 254, resist: 0.2, acts: 2,
-    actions: [{ kind: 'attack', w: 80 }, { kind: 'breath', power: [30, 42], w: 20 }],
-  },
-  {
-    id: 'm39', name: '朱根のガンザ', emoji: '👾',
-    hp: 302, atk: 76, def: 58, agi: 26, exp: 245, gold: 275, resist: 0.2, acts: 2,
-    actions: [{ kind: 'attack', w: 85 }, { kind: 'heal', power: 80, w: 15 }],
   },
   {
     id: 'm48', name: '眠り鐘のオボロ', emoji: '👾',
-    hp: 333, atk: 78, def: 57, agi: 27, exp: 266, gold: 300, resist: 0.28, acts: 2,
-    actions: [{ kind: 'attack', w: 85 }, { kind: 'heal', power: 80, w: 15 }],
+    hp: 253, atk: 66, def: 47, agi: 29, exp: 172, gold: 197, resist: 0.31, acts: 2,
+    actions: [{ kind: 'attack', w: 65 }, { kind: 'spell', id: 'flamra', w: 20 }, { kind: 'sleep', w: 15 }],
   },
   {
     id: 'm08', name: '鉄根のバルグ', emoji: '👾',
-    hp: 375, atk: 80, def: 56, agi: 28, exp: 288, gold: 327, resist: 0.39, acts: 2,
-    actions: [{ kind: 'attack', w: 55 }, { kind: 'breath', power: [40, 54], w: 45 }],
+    hp: 315, atk: 75, def: 55, agi: 25, exp: 221, gold: 251, resist: 0.2, acts: 2,
+    actions: [{ kind: 'attack', w: 80 }, { kind: 'breath', power: [30, 42], w: 20 }],
   },
   {
     id: 'm49', name: '地脈縫いのラザン', emoji: '👾',
-    hp: 399, atk: 81, def: 58, agi: 23, exp: 309, gold: 358, resist: 0.45, acts: 2,
-    actions: [{ kind: 'attack', w: 55 }, { kind: 'breath', power: [41, 56], w: 45 }],
+    hp: 351, atk: 79, def: 57, agi: 27, exp: 275, gold: 312, resist: 0.33, acts: 2,
+    actions: [{ kind: 'attack', w: 55 }, { kind: 'breath', power: [40, 54], w: 45 }],
   },
   {
     id: 'm50', name: '暁喰らいのセレド', emoji: '👾',
